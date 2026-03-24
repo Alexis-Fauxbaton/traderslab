@@ -1,0 +1,16 @@
+import uuid
+from datetime import datetime
+
+from sqlalchemy import Column, String, DateTime
+from database import Base
+
+
+class Strategy(Base):
+    __tablename__ = "strategies"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    description = Column(String, default="")
+    market = Column(String, nullable=False)
+    timeframe = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
