@@ -247,8 +247,10 @@ window.addEventListener('DOMContentLoaded', function() {
 
 // ===== PAGE: DASHBOARD =====
 
+var _dashboardCharts = [];
+
 async function pageDashboard() {
-  var strategies = await API.get('/strategies');
+  var strategies = await API.get('/strategies/dashboard');
 
   APP.innerHTML = '<div class="fade-in">' +
     '<div class="flex items-center justify-between mb-6">' +
@@ -257,29 +259,70 @@ async function pageDashboard() {
     '</div>' +
     (strategies.length === 0 ? emptyState('Aucune stratégie créée') :
     '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' +
-      strategies.map(function(s) {
+      strategies.map(function(s, idx) {
+        var m = s.aggregate_metrics;
+        var hasMet = m && m.total_trades > 0;
+        var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
+        var desc = s.description || '';
+        if (desc.length > 120) desc = desc.substring(0, 120) + '…';
         return '<a href="#/strategy/' + s.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
-          '<div class="flex items-start justify-between mb-3">' +
+          '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(s.name) + '</h3>' +
             '<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">' + esc(s.timeframe) + '</span>' +
           '</div>' +
-          '<p class="text-sm text-slate-400 mb-3 line-clamp-2">' + (esc(s.description) || '<span class="italic">Pas de description</span>') + '</p>' +
+          '<p class="text-xs text-slate-400 mb-2">' + (esc(desc) || '<span class="italic">Pas de description</span>') + '</p>' +
+          (hasMet ?
+            '<div style="height:60px" class="mb-2"><canvas id="dash-chart-' + idx + '"></canvas></div>' +
+            '<div class="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">' +
+              '<span>PnL ' + formatPnl(m.total_pnl) + '</span>' +
+              '<span>Profit Factor <span class="text-white">' + (m.profit_factor != null ? m.profit_factor.toFixed(2) : '—') + '</span></span>' +
+              '<span>RR Moyen <span class="text-white">' + (rr != null ? rr.toFixed(2) : '—') + '</span></span>' +
+            '</div>'
+          : '') +
           '<div class="flex items-center gap-3 text-xs text-slate-500">' +
             '<span>📈 ' + esc(s.market) + '</span>' +
             '<span>📅 ' + formatDate(s.created_at) + '</span>' +
+            (hasMet ? '<span>' + m.total_trades + ' trades</span>' : '') +
           '</div>' +
         '</a>';
       }).join('') +
     '</div>') +
   '</div>';
 
+  // Render mini equity charts
+  _dashboardCharts.forEach(function(c) { c.destroy(); });
+  _dashboardCharts = [];
+  strategies.forEach(function(s, idx) {
+    var m = s.aggregate_metrics;
+    if (!m || !m.equity_curve || m.equity_curve.length === 0) return;
+    var canvas = document.getElementById('dash-chart-' + idx);
+    if (!canvas) return;
+    var values = m.equity_curve.map(function(p) { return p.cumulative_pnl; });
+    var labels = m.equity_curve.map(function(p) { return ''; });
+    var color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
+    var bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
+    var chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: labels, datasets: [{ data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, interaction: { enabled: false } }
+    });
+    _dashboardCharts.push(chart);
+  });
+
   document.getElementById('btn-new-strat').onclick = function() { showNewStrategyModal(); };
 }
 
 // ===== PAGE: STRATEGY DETAIL =====
 
+var _strategyCharts = [];
+
 async function pageStrategy(id) {
   var data = await API.get('/strategies/' + id);
+  var variantsSummary = await API.get('/strategies/' + id + '/variants-summary');
+
+  // Build a lookup map from summary data
+  var varMetrics = {};
+  variantsSummary.forEach(function(vs) { varMetrics[vs.id] = vs.aggregate_metrics; });
 
   APP.innerHTML = '<div class="fade-in">' +
     breadcrumb([{label:'Stratégies', href:'#/'}, {label: data.name}]) +
@@ -305,19 +348,55 @@ async function pageStrategy(id) {
       '<button id="btn-new-var" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Variante</button>' +
     '</div>' +
     (data.variants.length === 0 ? emptyState('Aucune variante créée') :
-    '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
-      data.variants.map(function(v) {
+    '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' +
+      data.variants.map(function(v, idx) {
+        var m = varMetrics[v.id];
+        var hasMet = m && m.total_trades > 0;
+        var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
+        var desc = v.description || '';
+        if (desc.length > 120) desc = desc.substring(0, 120) + '…';
         return '<a href="#/variant/' + v.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
-          '<div class="flex items-center justify-between mb-2">' +
+          '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(v.name) + '</h3>' +
             statusBadge(v.status) +
           '</div>' +
-          '<p class="text-sm text-slate-400 mb-2 line-clamp-1">' + (esc(v.hypothesis) || "Pas d'hypothèse") + '</p>' +
-          (v.decision ? '<p class="text-xs text-slate-500 italic line-clamp-1">→ ' + esc(v.decision) + '</p>' : '') +
+          '<p class="text-xs text-slate-400 mb-2">' + (esc(desc) || '<span class="italic">Pas de description</span>') + '</p>' +
+          (hasMet ?
+            '<div style="height:60px" class="mb-2"><canvas id="var-chart-' + idx + '"></canvas></div>' +
+            '<div class="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">' +
+              '<span>PnL ' + formatPnl(m.total_pnl) + '</span>' +
+              '<span>Profit Factor <span class="text-white">' + (m.profit_factor != null ? m.profit_factor.toFixed(2) : '—') + '</span></span>' +
+              '<span>RR Moyen <span class="text-white">' + (rr != null ? rr.toFixed(2) : '—') + '</span></span>' +
+            '</div>'
+          : '') +
+          '<div class="flex items-center gap-3 text-xs text-slate-500">' +
+            '<span>📅 ' + formatDate(v.created_at) + '</span>' +
+            (hasMet ? '<span>' + m.total_trades + ' trades</span>' : '') +
+          '</div>' +
         '</a>';
       }).join('') +
     '</div>') +
   '</div>';
+
+  // Render mini equity charts for variants
+  _strategyCharts.forEach(function(c) { c.destroy(); });
+  _strategyCharts = [];
+  data.variants.forEach(function(v, idx) {
+    var m = varMetrics[v.id];
+    if (!m || !m.equity_curve || m.equity_curve.length === 0) return;
+    var canvas = document.getElementById('var-chart-' + idx);
+    if (!canvas) return;
+    var values = m.equity_curve.map(function(p) { return p.cumulative_pnl; });
+    var labels = m.equity_curve.map(function(p) { return ''; });
+    var color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
+    var bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
+    var chart = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: { labels: labels, datasets: [{ data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: 0, borderWidth: 1.5 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { enabled: false } }, scales: { x: { display: false }, y: { display: false } }, interaction: { enabled: false } }
+    });
+    _strategyCharts.push(chart);
+  });
 
   document.getElementById('btn-edit-strat').onclick = function() {
     showModal('Modifier la Stratégie',
@@ -595,6 +674,7 @@ async function pageRun(id) {
 // ===== PAGE: IMPORT CSV =====
 
 var _csvFile = null;
+var _selectedFormat = 'manual';
 
 async function pageImport(variantId) {
   _csvFile = null;
@@ -626,6 +706,21 @@ async function pageImport(variantId) {
             {value:'forward',label:'Forward Test'},
             {value:'live',label:'Live'}
           ]) +
+        '</div>' +
+        '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-4">' +
+          '<label class="text-sm text-slate-400 block mb-3">Format d\'import</label>' +
+          '<div class="grid grid-cols-2 gap-3">' +
+            '<div id="fmt-manual" class="format-card cursor-pointer rounded-xl border-2 ' + (_selectedFormat === 'manual' ? 'border-blue-500 bg-blue-500/10' : 'border-slate-600 bg-slate-700/50') + ' p-4 text-center transition">' +
+              '<div class="text-2xl mb-2">📝</div>' +
+              '<div class="text-sm font-semibold text-white">Manuel</div>' +
+              '<p class="text-xs text-slate-400 mt-1">Mapping personnalisé</p>' +
+            '</div>' +
+            '<div id="fmt-fxreplay" class="format-card cursor-pointer rounded-xl border-2 ' + (_selectedFormat === 'fxreplay' ? 'border-amber-500 bg-amber-500/10' : 'border-slate-600 bg-slate-700/50') + ' p-4 text-center transition">' +
+              '<div class="mb-2"><svg width="32" height="32" viewBox="0 0 32 32" fill="none" class="inline-block"><rect width="32" height="32" rx="6" fill="#F59E0B"/><path d="M13 9l10 7-10 7V9z" fill="white"/></svg></div>' +
+              '<div class="text-sm font-semibold text-white">FX Replay</div>' +
+              '<p class="text-xs text-slate-400 mt-1">Colonnes auto-mappées</p>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
         '<div id="drop-zone" class="drop-zone bg-slate-800 rounded-xl p-12 text-center cursor-pointer mb-4">' +
           '<div class="text-4xl mb-3">📁</div>' +
@@ -680,6 +775,20 @@ async function pageImport(variantId) {
     document.getElementById('preview-section').classList.add('hidden');
     document.getElementById('import-section').classList.add('hidden');
     dropZone.classList.remove('hidden');
+  };
+
+  // Format preset handlers
+  document.getElementById('fmt-manual').onclick = function() {
+    _selectedFormat = 'manual';
+    document.getElementById('fmt-manual').className = 'format-card cursor-pointer rounded-xl border-2 border-blue-500 bg-blue-500/10 p-4 text-center transition';
+    document.getElementById('fmt-fxreplay').className = 'format-card cursor-pointer rounded-xl border-2 border-slate-600 bg-slate-700/50 p-4 text-center transition';
+    if (_csvFile) handleFile(_csvFile, fields);
+  };
+  document.getElementById('fmt-fxreplay').onclick = function() {
+    _selectedFormat = 'fxreplay';
+    document.getElementById('fmt-fxreplay').className = 'format-card cursor-pointer rounded-xl border-2 border-amber-500 bg-amber-500/10 p-4 text-center transition';
+    document.getElementById('fmt-manual').className = 'format-card cursor-pointer rounded-xl border-2 border-slate-600 bg-slate-700/50 p-4 text-center transition';
+    if (_csvFile) handleFile(_csvFile, fields);
   };
 
   document.getElementById('btn-import').onclick = async function() {
@@ -743,11 +852,20 @@ function handleFile(file, fields) {
   document.getElementById('file-info').classList.remove('hidden');
   document.getElementById('drop-zone').classList.add('hidden');
 
-  var defaults = {
-    open_time: 'Open Time', close_time: 'Close Time', symbol: 'Symbol',
-    side: 'Type', entry_price: 'Entry', exit_price: 'Exit',
-    lot_size: 'Lots', pnl: 'Profit', pips: 'Pips'
-  };
+  var defaults;
+  if (_selectedFormat === 'fxreplay') {
+    defaults = {
+      open_time: 'dateStart', close_time: 'dateEnd', symbol: 'pair',
+      side: 'side', entry_price: 'entryPrice', exit_price: 'avgClosePrice',
+      lot_size: 'amount', pnl: 'rPnL'
+    };
+  } else {
+    defaults = {
+      open_time: 'Open Time', close_time: 'Close Time', symbol: 'Symbol',
+      side: 'Type', entry_price: 'Entry', exit_price: 'Exit',
+      lot_size: 'Lots', pnl: 'Profit', pips: 'Pips'
+    };
+  }
 
   Papa.parse(file, {
     header: true,

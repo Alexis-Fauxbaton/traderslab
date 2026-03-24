@@ -13,15 +13,14 @@ import pandas as pd
 
 # Mapping par défaut (format FX Replay)
 DEFAULT_MAPPING = {
-    "open_time": "Open Time",
-    "close_time": "Close Time",
-    "symbol": "Symbol",
-    "side": "Type",
-    "entry_price": "Entry",
-    "exit_price": "Exit",
-    "lot_size": "Lots",
-    "pnl": "Profit",
-    "pips": "Pips",
+    "open_time": "dateStart",
+    "close_time": "dateEnd",
+    "symbol": "pair",
+    "side": "side",
+    "entry_price": "entryPrice",
+    "exit_price": "avgClosePrice",
+    "lot_size": "amount",
+    "pnl": "rPnL",
 }
 
 
