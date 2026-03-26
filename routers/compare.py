@@ -1,17 +1,25 @@
+from datetime import date, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Any
+from typing import Any, Optional
 
 from database import get_db
 from models.variant import Variant
 from models.run import Run
 from models.trade import Trade
+from services.metrics import compute_metrics
 
 router = APIRouter(prefix="/compare", tags=["compare"])
 
 
-def _get_latest_run_data(variant_id: str, db: Session) -> dict[str, Any] | None:
-    """Récupère les données du run le plus récent d'une variante."""
+def _get_latest_run_data(
+    variant_id: str,
+    db: Session,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+) -> dict[str, Any] | None:
+    """Récupère les données du run le plus récent d'une variante, optionnellement filtrées par période."""
     run = (
         db.query(Run)
         .filter(Run.variant_id == variant_id)
@@ -21,30 +29,39 @@ def _get_latest_run_data(variant_id: str, db: Session) -> dict[str, Any] | None:
     if not run:
         return None
 
-    trades = (
-        db.query(Trade)
-        .filter(Trade.run_id == run.id)
-        .order_by(Trade.close_time)
-        .all()
-    )
+    query = db.query(Trade).filter(Trade.run_id == run.id)
+    if start_date:
+        query = query.filter(Trade.close_time >= datetime.combine(start_date, datetime.min.time()))
+    if end_date:
+        query = query.filter(Trade.close_time <= datetime.combine(end_date, datetime.max.time()))
+    trades = query.order_by(Trade.close_time).all()
 
-    # Equity curve depuis les métriques stockées, ou recalculée depuis les trades
-    equity_curve = []
-    if run.metrics and "equity_curve" in run.metrics:
-        equity_curve = run.metrics["equity_curve"]
+    # Si filtrage par période, recalculer les métriques sur les trades filtrés
+    if start_date or end_date:
+        trade_dicts = [
+            {"close_time": t.close_time, "pnl": t.pnl}
+            for t in trades
+        ]
+        metrics = compute_metrics(trade_dicts)
+        equity_curve = metrics.pop("equity_curve", [])
     else:
-        cumulative = 0.0
-        for t in trades:
-            cumulative += t.pnl
-            equity_curve.append({
-                "date": t.close_time.isoformat(),
-                "cumulative_pnl": round(cumulative, 2),
-            })
+        metrics = run.metrics
+        equity_curve = []
+        if run.metrics and "equity_curve" in run.metrics:
+            equity_curve = run.metrics["equity_curve"]
+        else:
+            cumulative = 0.0
+            for t in trades:
+                cumulative += t.pnl
+                equity_curve.append({
+                    "date": t.close_time.isoformat(),
+                    "cumulative_pnl": round(cumulative, 2),
+                })
 
     return {
         "run_id": run.id,
         "label": run.label,
-        "metrics": run.metrics,
+        "metrics": metrics,
         "equity_curve": equity_curve,
     }
 
@@ -102,9 +119,22 @@ def _build_diff(metrics_a: dict | None, metrics_b: dict | None) -> dict[str, str
 def compare_variants(
     variant_a: str = Query(...),
     variant_b: str = Query(...),
+    start_date_a: Optional[date] = Query(None),
+    end_date_a: Optional[date] = Query(None),
+    start_date_b: Optional[date] = Query(None),
+    end_date_b: Optional[date] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Compare deux variantes en retournant leurs infos, métriques et equity curves."""
+    """Compare deux variantes en retournant leurs infos, métriques et equity curves.
+
+    Paramètres de période :
+    - start_date / end_date : période commune aux deux variantes
+    - start_date_a / end_date_a : période spécifique à la variante A
+    - start_date_b / end_date_b : période spécifique à la variante B
+    Les périodes spécifiques écrasent la période commune.
+    """
     va = db.query(Variant).filter(Variant.id == variant_a).first()
     vb = db.query(Variant).filter(Variant.id == variant_b).first()
     if not va:
@@ -112,8 +142,13 @@ def compare_variants(
     if not vb:
         raise HTTPException(404, f"Variante B introuvable : {variant_b}")
 
-    data_a = _get_latest_run_data(variant_a, db)
-    data_b = _get_latest_run_data(variant_b, db)
+    sd_a = start_date_a or start_date
+    ed_a = end_date_a or end_date
+    sd_b = start_date_b or start_date
+    ed_b = end_date_b or end_date
+
+    data_a = _get_latest_run_data(variant_a, db, sd_a, ed_a)
+    data_b = _get_latest_run_data(variant_b, db, sd_b, ed_b)
 
     metrics_a = data_a["metrics"] if data_a else None
     metrics_b = data_b["metrics"] if data_b else None

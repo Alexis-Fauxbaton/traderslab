@@ -42,3 +42,15 @@
 
 table { border-collapse: separate; border-spacing: 0; }
 th { position: sticky; top: 0; }
+
+/* Flatpickr dark overrides */
+.flatpickr-calendar { background: #1e293b !important; border: 1px solid #334155 !important; box-shadow: 0 10px 40px rgba(0,0,0,.5) !important; }
+.flatpickr-months .flatpickr-month, .flatpickr-current-month .flatpickr-monthDropdown-months { background: #1e293b !important; color: #e2e8f0 !important; }
+.flatpickr-current-month input.cur-year { color: #e2e8f0 !important; }
+span.flatpickr-weekday { color: #94a3b8 !important; }
+.flatpickr-day { color: #e2e8f0 !important; }
+.flatpickr-day:hover { background: #334155 !important; border-color: #334155 !important; }
+.flatpickr-day.selected { background: #3b82f6 !important; border-color: #3b82f6 !important; }
+.flatpickr-day.today { border-color: #3b82f6 !important; }
+.flatpickr-day.prevMonthDay, .flatpickr-day.nextMonthDay { color: #475569 !important; }
+.flatpickr-months .flatpickr-prev-month, .flatpickr-months .flatpickr-next-month { fill: #94a3b8 !important; }

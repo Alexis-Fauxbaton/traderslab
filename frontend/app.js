@@ -912,6 +912,7 @@ function handleFile(file, fields) {
 var _compareChart = null;
 var _compareSlotA = null;
 var _compareSlotB = null;
+var _comparePeriodMode = 'common'; // 'common' | 'individual'
 
 async function pageCompare() {
   APP.innerHTML = '<div class="fade-in">' +
@@ -935,6 +936,43 @@ async function pageCompare() {
             : '<span class="text-slate-500 text-sm">Déposez une variante ici</span>') +
         '</div>' +
         '<select id="sel-b" class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white mt-2"><option value="">Ou sélectionner...</option></select>' +
+      '</div>' +
+    '</div>' +
+    '<div class="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<h3 class="text-sm font-semibold text-white">Filtrer par période</h3>' +
+        '<div class="flex gap-2">' +
+          '<button id="btn-period-common" class="text-xs px-3 py-1 rounded-lg border transition ' + (_comparePeriodMode === 'common' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white') + '">Période commune</button>' +
+          '<button id="btn-period-individual" class="text-xs px-3 py-1 rounded-lg border transition ' + (_comparePeriodMode === 'individual' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white') + '">Par variante</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="period-common" class="' + (_comparePeriodMode === 'common' ? '' : 'hidden') + '">' +
+        '<div class="grid grid-cols-2 gap-4">' +
+          '<div><label class="text-xs text-slate-400 block mb-1">Début</label><input type="text" id="date-start" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+          '<div><label class="text-xs text-slate-400 block mb-1">Fin</label><input type="text" id="date-end" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="period-individual" class="' + (_comparePeriodMode === 'individual' ? '' : 'hidden') + '">' +
+        '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+          '<div class="border border-slate-700 rounded-lg p-3">' +
+            '<span class="text-xs text-blue-400 font-medium block mb-2">Variante A</span>' +
+            '<div class="grid grid-cols-2 gap-2">' +
+              '<div><label class="text-xs text-slate-400 block mb-1">Début</label><input type="text" id="date-start-a" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+              '<div><label class="text-xs text-slate-400 block mb-1">Fin</label><input type="text" id="date-end-a" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="border border-slate-700 rounded-lg p-3">' +
+            '<span class="text-xs text-amber-400 font-medium block mb-2">Variante B</span>' +
+            '<div class="grid grid-cols-2 gap-2">' +
+              '<div><label class="text-xs text-slate-400 block mb-1">Début</label><input type="text" id="date-start-b" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+              '<div><label class="text-xs text-slate-400 block mb-1">Fin</label><input type="text" id="date-end-b" placeholder="AAAA-MM-JJ" class="flatpickr-date w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none"></div>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="flex justify-end mt-3">' +
+        '<button id="btn-apply-period" class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition">Appliquer</button>' +
+        '<button id="btn-clear-period" class="text-xs text-slate-400 hover:text-white px-3 py-1.5 ml-2 transition">Réinitialiser</button>' +
       '</div>' +
     '</div>' +
     '<div id="compare-results"></div>' +
@@ -1006,10 +1044,74 @@ async function pageCompare() {
     pageCompare();
   };
 
+  // Init flatpickr on all date inputs
+  document.querySelectorAll('.flatpickr-date').forEach(function(el) {
+    flatpickr(el, {
+      locale: 'fr',
+      dateFormat: 'Y-m-d',
+      allowInput: true,
+      theme: 'dark',
+    });
+  });
+
+  // Period mode toggle
+  document.getElementById('btn-period-common').onclick = function() {
+    _comparePeriodMode = 'common';
+    document.getElementById('period-common').classList.remove('hidden');
+    document.getElementById('period-individual').classList.add('hidden');
+    this.className = 'text-xs px-3 py-1 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
+    document.getElementById('btn-period-individual').className = 'text-xs px-3 py-1 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+  };
+  document.getElementById('btn-period-individual').onclick = function() {
+    _comparePeriodMode = 'individual';
+    document.getElementById('period-individual').classList.remove('hidden');
+    document.getElementById('period-common').classList.add('hidden');
+    this.className = 'text-xs px-3 py-1 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
+    document.getElementById('btn-period-common').className = 'text-xs px-3 py-1 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+  };
+
+  // Apply period filter
+  document.getElementById('btn-apply-period').onclick = function() {
+    if (_compareSlotA && _compareSlotB) {
+      loadComparison(_compareSlotA.id, _compareSlotB.id, getComparePeriodParams());
+    }
+  };
+
+  // Clear period filter
+  document.getElementById('btn-clear-period').onclick = function() {
+    ['date-start', 'date-end', 'date-start-a', 'date-end-a', 'date-start-b', 'date-end-b'].forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    if (_compareSlotA && _compareSlotB) {
+      loadComparison(_compareSlotA.id, _compareSlotB.id);
+    }
+  };
+
   // Auto-load comparison
   if (_compareSlotA && _compareSlotB) {
     await loadComparison(_compareSlotA.id, _compareSlotB.id);
   }
+}
+
+function getComparePeriodParams() {
+  var params = '';
+  if (_comparePeriodMode === 'common') {
+    var s = document.getElementById('date-start').value;
+    var e = document.getElementById('date-end').value;
+    if (s) params += '&start_date=' + s;
+    if (e) params += '&end_date=' + e;
+  } else {
+    var sa = document.getElementById('date-start-a').value;
+    var ea = document.getElementById('date-end-a').value;
+    var sb = document.getElementById('date-start-b').value;
+    var eb = document.getElementById('date-end-b').value;
+    if (sa) params += '&start_date_a=' + sa;
+    if (ea) params += '&end_date_a=' + ea;
+    if (sb) params += '&start_date_b=' + sb;
+    if (eb) params += '&end_date_b=' + eb;
+  }
+  return params;
 }
 
 function setupCompareDropZone(elementId, slot) {
@@ -1043,11 +1145,12 @@ function setupCompareDropZone(elementId, slot) {
   });
 }
 
-async function loadComparison(va, vb) {
+async function loadComparison(va, vb, periodParams) {
   var container = document.getElementById('compare-results');
   container.innerHTML = spinner();
   try {
-    var data = await API.get('/compare?variant_a=' + va + '&variant_b=' + vb);
+    var url = '/compare?variant_a=' + va + '&variant_b=' + vb + (periodParams || '');
+    var data = await API.get(url);
     var a = data.variant_a, b = data.variant_b;
     var ma = (a.latest_run && a.latest_run.metrics) || {};
     var mb = (b.latest_run && b.latest_run.metrics) || {};
