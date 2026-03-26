@@ -14,6 +14,8 @@ class Variant(Base):
     name = Column(String, nullable=False)
     description = Column(String, default="")
     hypothesis = Column(String, default="")
+    changes = Column(String, default="")
+    change_reason = Column(String, default="")
     decision = Column(String, default="")
     status = Column(String, default="active")  # active | testing | archived | abandoned
     created_at = Column(DateTime, default=datetime.utcnow)

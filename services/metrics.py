@@ -15,6 +15,9 @@ def compute_metrics(trades: list[dict]) -> dict:
             "win_rate": 0.0,
             "profit_factor": None,
             "max_drawdown": 0.0,
+            "dd_peak_equity": 0.0,
+            "dd_start_idx": 0,
+            "dd_end_idx": 0,
             "expectancy": 0.0,
             "total_pnl": 0.0,
             "avg_win": 0.0,
@@ -43,8 +46,9 @@ def compute_metrics(trades: list[dict]) -> dict:
     avg_win = (sum_wins / len(wins)) if wins else 0.0
     avg_loss = (sum(losses) / len(losses)) if losses else 0.0
 
-    loss_rate = 1.0 - win_rate
-    expectancy = (win_rate * avg_win) - (loss_rate * abs(avg_loss))
+    # Expectancy = espérance mathématique par trade = PnL total / nombre de trades
+    # Équivalent à : win_rate * avg_win + loss_rate * avg_loss (avg_loss est négatif)
+    expectancy = sum(pnls) / total_trades if total_trades > 0 else 0.0
 
     total_pnl = sum(pnls)
     best_trade = max(pnls)
@@ -67,20 +71,32 @@ def compute_metrics(trades: list[dict]) -> dict:
         })
 
     # Max drawdown calculé sur la courbe cumulée (peak-to-trough)
+    # Peak démarre à 0 (capital initial avant le premier trade)
     max_drawdown = 0.0
-    peak = cumulative_values[0]
-    for val in cumulative_values:
+    peak = 0.0
+    dd_peak = 0.0  # pic d'equity au moment du max drawdown
+    dd_start_idx = 0  # indice du pic (début du drawdown)
+    dd_end_idx = 0    # indice du creux (fin du drawdown)
+    peak_idx = 0
+    for i, val in enumerate(cumulative_values):
         if val > peak:
             peak = val
+            peak_idx = i
         drawdown = peak - val
         if drawdown > max_drawdown:
             max_drawdown = drawdown
+            dd_peak = peak
+            dd_start_idx = peak_idx
+            dd_end_idx = i
 
     return {
         "total_trades": total_trades,
         "win_rate": round(win_rate, 4),
         "profit_factor": round(profit_factor, 4) if profit_factor is not None else None,
         "max_drawdown": round(max_drawdown, 2),
+        "dd_peak_equity": round(dd_peak, 2),
+        "dd_start_idx": dd_start_idx,
+        "dd_end_idx": dd_end_idx,
         "expectancy": round(expectancy, 2),
         "total_pnl": round(total_pnl, 2),
         "avg_win": round(avg_win, 2),

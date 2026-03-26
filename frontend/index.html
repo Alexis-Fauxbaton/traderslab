@@ -7,11 +7,14 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>📊</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/fr.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="bg-slate-900 text-slate-200 min-h-screen">
@@ -28,6 +31,15 @@
       <div class="flex items-center gap-4">
         <a href="#/" class="text-sm text-slate-300 hover:text-white transition">Dashboard</a>
         <a href="#/compare" class="text-sm text-slate-300 hover:text-white transition">Comparer</a>
+        <div class="flex items-center gap-1 ml-2 border-l border-slate-700 pl-3">
+          <select id="unit-selector" class="bg-slate-700 text-slate-300 text-xs rounded px-2 py-1 border border-slate-600 focus:border-blue-500 outline-none cursor-pointer" title="Unité d'affichage">
+            <option value="cash">$ Cash</option>
+            <option value="pct">%</option>
+            <option value="R">R</option>
+          </select>
+          <span id="unit-info" class="hidden text-slate-500 text-xs cursor-help">ⓘ</span>
+          <button id="btn-unit-settings" class="text-slate-400 hover:text-white text-sm px-1.5 py-1 rounded border border-slate-600 hover:border-slate-500 transition" title="Paramètres unités">⚙</button>
+        </div>
       </div>
     </div>
   </nav>

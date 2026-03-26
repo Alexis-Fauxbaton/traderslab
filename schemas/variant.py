@@ -16,6 +16,8 @@ class VariantCreate(BaseModel):
     name: str
     description: str = ""
     hypothesis: str = ""
+    changes: str = ""
+    change_reason: str = ""
     decision: str = ""
     status: VariantStatus = VariantStatus.active
 
@@ -24,6 +26,8 @@ class VariantUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     hypothesis: str | None = None
+    changes: str | None = None
+    change_reason: str | None = None
     decision: str | None = None
     status: VariantStatus | None = None
 
@@ -35,6 +39,8 @@ class VariantOut(BaseModel):
     name: str
     description: str
     hypothesis: str
+    changes: str
+    change_reason: str
     decision: str
     status: str
     created_at: datetime
@@ -53,6 +59,8 @@ class VariantLineageNode(BaseModel):
     name: str
     status: str
     hypothesis: str
+    changes: str
+    change_reason: str
     decision: str
     parent_variant_id: str | None
     children: list["VariantLineageNode"] = []

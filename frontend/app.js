@@ -11,6 +11,79 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// ===== UNIT SYSTEM =====
+
+var _unitSettings = JSON.parse(localStorage.getItem('unitSettings') || 'null') || {
+  initial_balance: 10000
+};
+// Risque moyen (|avg_loss|) du contexte courant — mis à jour avant chaque rendu de section
+var _currentAvgLoss = null;
+
+function saveUnitSettings() {
+  localStorage.setItem('unitSettings', JSON.stringify(_unitSettings));
+}
+
+function getUnit() {
+  var sel = document.getElementById('unit-selector');
+  return sel ? sel.value : 'cash';
+}
+
+/**
+ * Convertit une valeur monétaire selon l'unité sélectionnée.
+ *   cash → valeur brute
+ *   pct  → value / dénominateur * 100 (dénominateur varie selon ctx)
+ *   R    → value / |avg_loss|
+ *
+ * ctx = objet { denom: number } — dénominateur du % (initial_balance, peak equity, solde avant trade…)
+ */
+function convertMetric(value, ctx) {
+  if (value == null) return null;
+  var unit = getUnit();
+  if (unit === 'cash') return value;
+  if (unit === 'pct') {
+    var d = ctx && ctx.denom != null ? ctx.denom : _unitSettings.initial_balance;
+    return d > 0 ? (value / d) * 100 : null;
+  }
+  if (unit === 'R') {
+    var r = _currentAvgLoss != null ? Math.abs(_currentAvgLoss) : 0;
+    return r > 0 ? value / r : null;
+  }
+  return value;
+}
+
+function unitSuffix() {
+  var unit = getUnit();
+  if (unit === 'pct') return '%';
+  if (unit === 'R') return 'R';
+  return '';
+}
+
+/**
+ * Formate un PnL avec conversion.
+ * denom = dénominateur pour le mode % (par défaut: initial_balance).
+ */
+function formatPnl(n, denom) {
+  if (n == null) return '—';
+  var v = convertMetric(n, {denom: denom != null ? denom : _unitSettings.initial_balance});
+  if (v == null) return '—';
+  var cls = v >= 0 ? 'text-green-400' : 'text-red-400';
+  var sign = v >= 0 ? '+' : '';
+  var suffix = unitSuffix();
+  return '<span class="' + cls + '">' + sign + v.toFixed(2) + (suffix ? suffix : '') + '</span>';
+}
+
+/**
+ * Formate un drawdown (toujours positif en entrée, affiché en négatif).
+ * ddPeak = pic d'equity pour le mode % (drawdown% = dd / peak_equity).
+ */
+function formatDrawdown(n, ddPeak) {
+  if (n == null) return '—';
+  var v = convertMetric(n, {denom: ddPeak || 0});
+  if (v == null) return '—';
+  var suffix = unitSuffix();
+  return '<span class="text-red-400">-' + v.toFixed(2) + (suffix ? suffix : '') + '</span>';
+}
+
 function formatDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -19,13 +92,6 @@ function formatDate(d) {
 function formatDateTime(d) {
   if (!d) return '—';
   return new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-function formatPnl(n) {
-  if (n == null) return '—';
-  var cls = n >= 0 ? 'text-green-400' : 'text-red-400';
-  var sign = n >= 0 ? '+' : '';
-  return '<span class="' + cls + '">' + sign + n.toFixed(2) + '</span>';
 }
 
 function formatPercent(n) {
@@ -242,8 +308,53 @@ window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', function() {
   setupSidebar();
   loadSidebar();
+  initUnitSystem();
   route();
 });
+
+function initUnitSystem() {
+  var sel = document.getElementById('unit-selector');
+  var infoIcon = document.getElementById('unit-info');
+  var saved = localStorage.getItem('unitMode');
+  if (saved && sel) sel.value = saved;
+
+  var _infoTexts = {
+    'pct': 'PnL, expectancy, avg\u2026 → % du capital initial. Drawdown → % du pic equity. Trade → % du solde avant le trade.',
+    'R': 'R = valeur / |avg loss|. Le risque moyen est calculé automatiquement depuis le avg_loss du run affiché.'
+  };
+  function toggleInfo() {
+    if (!infoIcon) return;
+    var txt = _infoTexts[sel.value];
+    if (txt) {
+      infoIcon.classList.remove('hidden');
+      infoIcon.title = txt;
+    } else {
+      infoIcon.classList.add('hidden');
+    }
+  }
+  if (sel) {
+    toggleInfo();
+    sel.onchange = function() {
+      localStorage.setItem('unitMode', sel.value);
+      toggleInfo();
+      route(); // re-render page with new unit
+    };
+  }
+
+  var btn = document.getElementById('btn-unit-settings');
+  if (btn) {
+    btn.onclick = function() {
+      showModal('Paramètres des unités',
+        inputField('initial_balance', 'Capital initial ($)', 'number', true, _unitSettings.initial_balance),
+        function(fd) {
+          _unitSettings.initial_balance = parseFloat(fd.get('initial_balance')) || 10000;
+          saveUnitSettings();
+          route();
+        }
+      );
+    };
+  }
+}
 
 // ===== PAGE: DASHBOARD =====
 
@@ -262,6 +373,7 @@ async function pageDashboard() {
       strategies.map(function(s, idx) {
         var m = s.aggregate_metrics;
         var hasMet = m && m.total_trades > 0;
+        _currentAvgLoss = hasMet ? m.avg_loss : null;
         var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
         var desc = s.description || '';
         if (desc.length > 120) desc = desc.substring(0, 120) + '…';
@@ -315,6 +427,123 @@ async function pageDashboard() {
 // ===== PAGE: STRATEGY DETAIL =====
 
 var _strategyCharts = [];
+var _strategyNetwork = null;
+
+function renderStrategyGraph(containerId, variants, varMetrics) {
+  if (_strategyNetwork) { _strategyNetwork.destroy(); _strategyNetwork = null; }
+  var container = document.getElementById(containerId);
+  if (!container || !variants || variants.length === 0) return;
+
+  var nodes = [];
+  var edges = [];
+
+  variants.forEach(function(v) {
+    var m = varMetrics[v.id];
+    var hasMet = m && m.total_trades > 0;
+
+    // Build multiline label
+    var label = v.name;
+    if (hasMet) {
+      var pnlVal = m.total_pnl != null ? (m.total_pnl >= 0 ? '+' : '') + m.total_pnl.toFixed(2) : '—';
+      var wrVal = m.win_rate != null ? (m.win_rate * 100).toFixed(1) + '%' : '—';
+      label += '\n' + m.total_trades + ' trades | WR ' + wrVal + '\nPnL ' + pnlVal;
+    } else {
+      label += '\nPas de données';
+    }
+
+    // Color based on PnL
+    var borderColor = '#475569'; // slate-600
+    var bgColor = '#1e293b';     // slate-800
+    var fontColor = '#e2e8f0';   // slate-200
+    if (hasMet && m.total_pnl != null) {
+      if (m.total_pnl > 0) {
+        borderColor = '#22c55e'; bgColor = '#0f3a24';
+      } else if (m.total_pnl < 0) {
+        borderColor = '#ef4444'; bgColor = '#3b1111';
+      }
+    }
+
+    // Status indicator
+    var statusEmoji = v.status === 'active' ? '🟢 ' : v.status === 'paused' ? '🟡 ' : v.status === 'archived' ? '⚪ ' : '';
+
+    nodes.push({
+      id: v.id,
+      label: statusEmoji + label,
+      shape: 'box',
+      margin: { top: 12, bottom: 12, left: 16, right: 16 },
+      font: { multi: false, color: fontColor, size: 13, face: 'ui-sans-serif, system-ui, sans-serif', align: 'center' },
+      color: { background: bgColor, border: borderColor, highlight: { background: '#334155', border: '#60a5fa' }, hover: { background: '#334155', border: '#60a5fa' } },
+      borderWidth: 2,
+      borderWidthSelected: 3,
+      shadow: { enabled: true, color: 'rgba(0,0,0,0.4)', size: 8, x: 0, y: 3 },
+      chosen: true,
+      variantId: v.id
+    });
+
+    if (v.parent_variant_id) {
+      edges.push({
+        from: v.parent_variant_id,
+        to: v.id,
+        arrows: { to: { enabled: true, scaleFactor: 0.7, type: 'arrow' } },
+        color: { color: '#475569', highlight: '#60a5fa', hover: '#60a5fa' },
+        width: 2,
+        smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 }
+      });
+    }
+  });
+
+  var data = {
+    nodes: new vis.DataSet(nodes),
+    edges: new vis.DataSet(edges)
+  };
+
+  var options = {
+    layout: {
+      hierarchical: {
+        enabled: true,
+        direction: 'UD',
+        sortMethod: 'directed',
+        levelSeparation: 100,
+        nodeSpacing: 180,
+        treeSpacing: 200,
+        blockShifting: true,
+        edgeMinimization: true,
+        parentCentralization: true
+      }
+    },
+    physics: { enabled: false },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      zoomView: true,
+      dragView: true,
+      navigationButtons: false,
+      keyboard: false
+    },
+    nodes: {
+      shapeProperties: { borderRadius: 8 }
+    }
+  };
+
+  _strategyNetwork = new vis.Network(container, data, options);
+
+  // Click on node → navigate to variant page
+  _strategyNetwork.on('doubleClick', function(params) {
+    if (params.nodes && params.nodes.length > 0) {
+      var nodeId = params.nodes[0];
+      location.hash = '#/variant/' + nodeId;
+    }
+  });
+
+  // Cursor pointer on hover
+  _strategyNetwork.on('hoverNode', function() { container.style.cursor = 'pointer'; });
+  _strategyNetwork.on('blurNode', function() { container.style.cursor = 'default'; });
+
+  // Fit to content after stabilization
+  _strategyNetwork.once('afterDrawing', function() {
+    _strategyNetwork.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
+  });
+}
 
 async function pageStrategy(id) {
   var data = await API.get('/strategies/' + id);
@@ -345,13 +574,19 @@ async function pageStrategy(id) {
     '</div>' +
     '<div class="flex items-center justify-between mb-4">' +
       '<h2 class="text-lg font-semibold text-white">Variantes (' + data.variants.length + ')</h2>' +
-      '<button id="btn-new-var" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Variante</button>' +
+      '<div class="flex gap-2">' +
+        '<button id="btn-view-grid" class="text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white">Grille</button>' +
+        '<button id="btn-view-tree" class="text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white">Arborescence</button>' +
+        '<button id="btn-new-var" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Variante</button>' +
+      '</div>' +
     '</div>' +
+    '<div id="variants-grid">' +
     (data.variants.length === 0 ? emptyState('Aucune variante créée') :
     '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' +
       data.variants.map(function(v, idx) {
         var m = varMetrics[v.id];
         var hasMet = m && m.total_trades > 0;
+        _currentAvgLoss = hasMet ? m.avg_loss : null;
         var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
         var desc = v.description || '';
         if (desc.length > 120) desc = desc.substring(0, 120) + '…';
@@ -376,11 +611,17 @@ async function pageStrategy(id) {
         '</a>';
       }).join('') +
     '</div>') +
+    '</div>' +
+    '<div id="variants-tree" class="hidden">' +
+      '<div id="strategy-graph" style="height:550px;border-radius:12px;overflow:hidden" class="bg-slate-800 border border-slate-700"></div>' +
+    '</div>' +
   '</div>';
 
-  // Render mini equity charts for variants
+  // Cleanup previous
   _strategyCharts.forEach(function(c) { c.destroy(); });
   _strategyCharts = [];
+  if (_strategyNetwork) { _strategyNetwork.destroy(); _strategyNetwork = null; }
+
   data.variants.forEach(function(v, idx) {
     var m = varMetrics[v.id];
     if (!m || !m.equity_curve || m.equity_curve.length === 0) return;
@@ -397,6 +638,24 @@ async function pageStrategy(id) {
     });
     _strategyCharts.push(chart);
   });
+
+  // View toggle: Grid / Tree
+  document.getElementById('btn-view-grid').onclick = function() {
+    document.getElementById('variants-grid').classList.remove('hidden');
+    document.getElementById('variants-tree').classList.add('hidden');
+    this.className = 'text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
+    document.getElementById('btn-view-tree').className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+  };
+  document.getElementById('btn-view-tree').onclick = function() {
+    document.getElementById('variants-tree').classList.remove('hidden');
+    document.getElementById('variants-grid').classList.add('hidden');
+    this.className = 'text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
+    document.getElementById('btn-view-grid').className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+    // Lazy-init the graph on first show
+    if (!_strategyNetwork) {
+      renderStrategyGraph('strategy-graph', data.variants, varMetrics);
+    }
+  };
 
   document.getElementById('btn-edit-strat').onclick = function() {
     showModal('Modifier la Stratégie',
@@ -433,8 +692,11 @@ async function pageStrategy(id) {
     showModal('Nouvelle Variante',
       inputField('name', 'Nom') +
       textareaField('description', 'Description') +
-      textareaField('hypothesis', 'Hypothèse') +
       selectField('parent_variant_id', 'Variante parente', parentOpts) +
+      textareaField('hypothesis', 'Hypothèse testée') +
+      textareaField('changes', 'Ce qui change') +
+      textareaField('change_reason', 'Raison du changement') +
+      textareaField('decision', 'Conclusion après test') +
       selectField('status', 'Statut', [
         {value:'active',label:'Active'},{value:'testing',label:'Testing'},
         {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
@@ -443,6 +705,8 @@ async function pageStrategy(id) {
         await API.post('/variants', {
           strategy_id: id, name: fd.get('name'),
           description: fd.get('description'), hypothesis: fd.get('hypothesis'),
+          changes: fd.get('changes'), change_reason: fd.get('change_reason'),
+          decision: fd.get('decision'),
           parent_variant_id: fd.get('parent_variant_id') || null,
           status: fd.get('status'),
         });
@@ -461,6 +725,24 @@ async function pageVariant(id) {
   try { lineage = await API.get('/variants/' + id + '/lineage'); } catch(e) {}
   var stratName = 'Stratégie';
   try { stratName = (await API.get('/strategies/' + data.strategy_id)).name; } catch(e) {}
+  var parentName = null;
+  if (data.parent_variant_id) {
+    try { parentName = (await API.get('/variants/' + data.parent_variant_id)).name; } catch(e) {}
+  }
+
+  var infoVal = function(val) { return val ? '<span class="text-white">' + esc(val) + '</span>' : '<span class="text-slate-600 italic">non renseigné</span>'; };
+  var infoCards = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm mt-4">' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Créée le</div><div class="text-slate-300">' + formatDate(data.created_at) + '</div></div>' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Variante parente</div><div>' +
+      (parentName
+        ? '<a href="#/variant/' + data.parent_variant_id + '" class="text-blue-400 hover:text-blue-300">' + esc(parentName) + '</a>'
+        : '<span class="text-slate-600 italic">aucune (racine)</span>') +
+    '</div></div>' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Hypothèse testée</div><div>' + infoVal(data.hypothesis) + '</div></div>' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Ce qui change</div><div>' + infoVal(data.changes) + '</div></div>' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Raison du changement</div><div>' + infoVal(data.change_reason) + '</div></div>' +
+    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Conclusion après test</div><div>' + infoVal(data.decision) + '</div></div>' +
+  '</div>';
 
   APP.innerHTML = '<div class="fade-in">' +
     breadcrumb([
@@ -469,9 +751,9 @@ async function pageVariant(id) {
       {label: data.name}
     ]) +
     '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
-      '<div class="flex items-start justify-between mb-4">' +
+      '<div class="flex items-start justify-between mb-2">' +
         '<div>' +
-          '<div class="flex items-center gap-3 mb-2">' +
+          '<div class="flex items-center gap-3 mb-1">' +
             '<h1 class="text-2xl font-bold text-white">' + esc(data.name) + '</h1>' +
             statusBadge(data.status) +
           '</div>' +
@@ -483,10 +765,7 @@ async function pageVariant(id) {
           '<button id="btn-del-var" class="text-sm text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-900 hover:border-red-700 transition">Supprimer</button>' +
         '</div>' +
       '</div>' +
-      '<div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">' +
-        '<div class="bg-slate-700/50 rounded-lg p-3"><span class="text-slate-400 block mb-1">Hypothèse</span><span class="text-white">' + (esc(data.hypothesis) || '—') + '</span></div>' +
-        '<div class="bg-slate-700/50 rounded-lg p-3"><span class="text-slate-400 block mb-1">Décision</span><span class="text-white">' + (esc(data.decision) || '—') + '</span></div>' +
-      '</div>' +
+      infoCards +
     '</div>' +
     (lineage ? '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
       '<h2 class="text-lg font-semibold text-white mb-3">Lignée</h2>' +
@@ -499,6 +778,7 @@ async function pageVariant(id) {
     (data.runs.length === 0 ? emptyState('Aucun run importé', 'Importer un CSV', '#/import/' + id) :
     '<div class="space-y-3">' +
       data.runs.map(function(r) {
+        _currentAvgLoss = (r.metrics && r.metrics.avg_loss) ? r.metrics.avg_loss : null;
         return '<a href="#/run/' + r.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-4 hover:border-blue-500/50 transition group">' +
           '<div class="flex items-center justify-between">' +
             '<div>' +
@@ -524,8 +804,10 @@ async function pageVariant(id) {
     showModal('Modifier la Variante',
       inputField('name', 'Nom', 'text', true, data.name) +
       textareaField('description', 'Description', false, data.description) +
-      textareaField('hypothesis', 'Hypothèse', false, data.hypothesis) +
-      textareaField('decision', 'Décision', false, data.decision) +
+      textareaField('hypothesis', 'Hypothèse testée', false, data.hypothesis) +
+      textareaField('changes', 'Ce qui change', false, data.changes) +
+      textareaField('change_reason', 'Raison du changement', false, data.change_reason) +
+      textareaField('decision', 'Conclusion après test', false, data.decision) +
       selectField('status', 'Statut', [
         {value:'active',label:'Active'},{value:'testing',label:'Testing'},
         {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
@@ -533,7 +815,8 @@ async function pageVariant(id) {
       async function(fd) {
         await API.put('/variants/' + id, {
           name: fd.get('name'), description: fd.get('description'),
-          hypothesis: fd.get('hypothesis'), decision: fd.get('decision'),
+          hypothesis: fd.get('hypothesis'), changes: fd.get('changes'),
+          change_reason: fd.get('change_reason'), decision: fd.get('decision'),
           status: fd.get('status'),
         });
         await loadSidebar();
@@ -587,12 +870,14 @@ async function pageRun(id) {
     stratName = (await API.get('/strategies/' + stratId)).name;
   } catch(e) {}
 
+  _currentAvgLoss = m.avg_loss;
+  var _ddPeak = _unitSettings.initial_balance + (m.dd_peak_equity || 0);
   var metrics = [
     {label: 'Total PnL', value: formatPnl(m.total_pnl)},
     {label: 'Trades', value: m.total_trades || 0},
     {label: 'Win Rate', value: formatPercent(m.win_rate)},
     {label: 'Profit Factor', value: m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'},
-    {label: 'Max Drawdown', value: m.max_drawdown != null ? '<span class="text-red-400">-' + m.max_drawdown.toFixed(2) + '</span>' : '—'},
+    {label: 'Max Drawdown', value: formatDrawdown(m.max_drawdown, _ddPeak)},
     {label: 'Expectancy', value: formatPnl(m.expectancy)},
     {label: 'Avg Win', value: formatPnl(m.avg_win)},
     {label: 'Avg Loss', value: formatPnl(m.avg_loss)},
@@ -626,7 +911,13 @@ async function pageRun(id) {
       }).join('') +
     '</div>' +
     '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
-      '<h2 class="text-lg font-semibold text-white mb-4">Equity Curve</h2>' +
+      '<div class="flex items-center justify-between mb-4">' +
+        '<h2 class="text-lg font-semibold text-white">Equity Curve</h2>' +
+        '<div class="flex items-center gap-3">' +
+          (m.max_drawdown > 0 ? '<label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none"><input type="checkbox" id="dd-highlight" class="accent-red-500"> Max Drawdown</label>' : '') +
+          '<button id="btn-reset-zoom" class="hidden text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded transition">Reset zoom</button>' +
+        '</div>' +
+      '</div>' +
       '<div style="height:300px"><canvas id="equity-chart"></canvas></div>' +
     '</div>' +
     '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6">' +
@@ -638,19 +929,24 @@ async function pageRun(id) {
           '<th class="py-2 px-3 bg-slate-800">Entry</th><th class="py-2 px-3 bg-slate-800">Exit</th>' +
           '<th class="py-2 px-3 bg-slate-800">Lots</th><th class="py-2 px-3 bg-slate-800">PnL</th>' +
           '<th class="py-2 px-3 bg-slate-800">Pips</th></tr></thead><tbody>' +
-          data.trades.map(function(t) {
-            return '<tr class="border-b border-slate-700/50 hover:bg-slate-700/30">' +
-              '<td class="py-2 px-3 text-slate-300">' + formatDateTime(t.open_time) + '</td>' +
-              '<td class="py-2 px-3 text-slate-300">' + formatDateTime(t.close_time) + '</td>' +
-              '<td class="py-2 px-3">' + esc(t.symbol) + '</td>' +
-              '<td class="py-2 px-3"><span class="' + (t.side === 'long' ? 'text-green-400' : 'text-red-400') + '">' + esc(t.side) + '</span></td>' +
-              '<td class="py-2 px-3">' + t.entry_price + '</td>' +
-              '<td class="py-2 px-3">' + t.exit_price + '</td>' +
-              '<td class="py-2 px-3">' + t.lot_size + '</td>' +
-              '<td class="py-2 px-3">' + formatPnl(t.pnl) + '</td>' +
-              '<td class="py-2 px-3">' + (t.pips != null ? t.pips : '—') + '</td>' +
-            '</tr>';
-          }).join('') +
+          (function() {
+            var cumPnl = 0;
+            return data.trades.map(function(t) {
+              var pnlBefore = cumPnl;
+              cumPnl += (t.pnl || 0);
+              return '<tr class="border-b border-slate-700/50 hover:bg-slate-700/30">' +
+                '<td class="py-2 px-3 text-slate-300">' + formatDateTime(t.open_time) + '</td>' +
+                '<td class="py-2 px-3 text-slate-300">' + formatDateTime(t.close_time) + '</td>' +
+                '<td class="py-2 px-3">' + esc(t.symbol) + '</td>' +
+                '<td class="py-2 px-3"><span class="' + (t.side === 'long' ? 'text-green-400' : 'text-red-400') + '">' + esc(t.side) + '</span></td>' +
+                '<td class="py-2 px-3">' + t.entry_price + '</td>' +
+                '<td class="py-2 px-3">' + t.exit_price + '</td>' +
+                '<td class="py-2 px-3">' + t.lot_size + '</td>' +
+                '<td class="py-2 px-3">' + formatPnl(t.pnl, _unitSettings.initial_balance + pnlBefore) + '</td>' +
+                '<td class="py-2 px-3">' + (t.pips != null ? t.pips : '—') + '</td>' +
+              '</tr>';
+            }).join('');
+          })() +
         '</tbody></table></div>' +
     '</div>' +
   '</div>';
@@ -662,11 +958,73 @@ async function pageRun(id) {
     var values = m.equity_curve.map(function(p) { return p.cumulative_pnl; });
     var color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
     var bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
-    new Chart(ctx, {
+
+    // Drawdown highlight dataset (hidden by default)
+    // Recalcul du DD directement depuis l'equity curve
+    // Le peak démarre à 0 (capital initial), comme dans le backend
+    var ddData = values.map(function() { return null; });
+    var ddStartIdx = -1, ddEndIdx = 0, ddMax = 0, peakVal = 0, peakIdx = -1;
+    for (var di = 0; di < values.length; di++) {
+      if (values[di] > peakVal) { peakVal = values[di]; peakIdx = di; }
+      var dd = peakVal - values[di];
+      if (dd > ddMax) { ddMax = dd; ddStartIdx = peakIdx; ddEndIdx = di; }
+    }
+    if (ddMax > 0) {
+      var from = ddStartIdx >= 0 ? ddStartIdx : 0;
+      for (var dj = from; dj <= ddEndIdx; dj++) {
+        ddData[dj] = values[dj];
+      }
+    }
+
+    var _isZoomed = false;
+    var equityChart = new Chart(ctx, {
       type: 'line',
-      data: { labels: labels, datasets: [{ label: 'PnL Cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6 }] },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }, y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } } } }
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'PnL Cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6 },
+          { label: 'Max Drawdown', data: ddData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.25)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ef4444', borderWidth: 2, borderDash: [4, 2], hidden: true }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          zoom: {
+            zoom: {
+              drag: { enabled: true, backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.5)', borderWidth: 1 },
+              mode: 'x',
+              onZoom: function() {
+                _isZoomed = true;
+                var btn = document.getElementById('btn-reset-zoom');
+                if (btn) btn.classList.remove('hidden');
+              }
+            }
+          }
+        },
+        scales: {
+          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+        }
+      }
     });
+
+    var btnReset = document.getElementById('btn-reset-zoom');
+    if (btnReset) {
+      btnReset.onclick = function() {
+        equityChart.resetZoom();
+        _isZoomed = false;
+        btnReset.classList.add('hidden');
+      };
+    }
+
+    var ddCheckbox = document.getElementById('dd-highlight');
+    if (ddCheckbox) {
+      ddCheckbox.onchange = function() {
+        equityChart.data.datasets[1].hidden = !this.checked;
+        equityChart.update();
+      };
+    }
   }
 
   document.getElementById('btn-del-run').onclick = async function() {
@@ -826,6 +1184,7 @@ async function pageImport(variantId) {
       document.getElementById('import-section').classList.add('hidden');
       var rs = document.getElementById('result-section');
       rs.classList.remove('hidden');
+      _currentAvgLoss = result.metrics.avg_loss;
       rs.innerHTML = '<div class="bg-green-900/30 border border-green-700 rounded-xl p-6">' +
         '<h3 class="text-lg font-semibold text-green-400 mb-3">✅ Import réussi</h3>' +
         '<div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">' +
@@ -1265,7 +1624,7 @@ async function loadComparison(va, vb, periodParams) {
       {key: 'total_trades', label: 'Trades', fmt: 'int'},
       {key: 'win_rate', label: 'Win Rate', fmt: 'pct'},
       {key: 'profit_factor', label: 'Profit Factor', fmt: 'num'},
-      {key: 'max_drawdown', label: 'Max Drawdown'},
+      {key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd'},
       {key: 'expectancy', label: 'Expectancy'},
       {key: 'avg_win', label: 'Avg Win'},
       {key: 'avg_loss', label: 'Avg Loss'},
@@ -1273,11 +1632,13 @@ async function loadComparison(va, vb, periodParams) {
       {key: 'worst_trade', label: 'Worst Trade'},
     ];
 
-    function fmtVal(val, fmt) {
+    function fmtVal(val, fmt, ddPeak, avgLoss) {
       if (val == null) return '—';
       if (fmt === 'pct') return formatPercent(val);
       if (fmt === 'num') return val.toFixed(2);
       if (fmt === 'int') return String(val);
+      _currentAvgLoss = avgLoss;
+      if (fmt === 'dd') return formatDrawdown(val, _unitSettings.initial_balance + (ddPeak || 0));
       return formatPnl(val);
     }
 
@@ -1303,11 +1664,12 @@ async function loadComparison(va, vb, periodParams) {
           '<th class="py-3 px-4 text-center bg-slate-800" style="width:35%">' + esc(b.name) + '</th>' +
         '</tr></thead><tbody>' +
         metricRows.map(function(r) {
+          var dpA = ma.dd_peak_equity, dpB = mb.dd_peak_equity;
           return '<tr class="border-b border-slate-700/50 hover:bg-slate-700/20">' +
             '<td class="py-2.5 px-4 text-slate-300">' + r.label + '</td>' +
-            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='A' ? 'bg-green-900/20' : '') + '">' + fmtVal(ma[r.key], r.fmt) + (diff[r.key]==='A' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
+            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='A' ? 'bg-green-900/20' : '') + '">' + fmtVal(ma[r.key], r.fmt, dpA, ma.avg_loss) + (diff[r.key]==='A' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
             '<td class="py-2.5 px-4 text-center text-slate-600">vs</td>' +
-            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='B' ? 'bg-green-900/20' : '') + '">' + fmtVal(mb[r.key], r.fmt) + (diff[r.key]==='B' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
+            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='B' ? 'bg-green-900/20' : '') + '">' + fmtVal(mb[r.key], r.fmt, dpB, mb.avg_loss) + (diff[r.key]==='B' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
           '</tr>';
         }).join('') +
         '</tbody></table></div>' +
