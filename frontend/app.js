@@ -478,6 +478,7 @@ async function pageVariant(id) {
           '<p class="text-slate-400 text-sm">' + (esc(data.description) || 'Pas de description') + '</p>' +
         '</div>' +
         '<div class="flex gap-2">' +
+          '<button id="btn-compare-var" class="text-sm text-blue-400 hover:text-blue-300 px-3 py-1.5 rounded-lg border border-blue-900 hover:border-blue-700 transition">⚖ Comparer</button>' +
           '<button id="btn-edit-var" class="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">Modifier</button>' +
           '<button id="btn-del-var" class="text-sm text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-900 hover:border-red-700 transition">Supprimer</button>' +
         '</div>' +
@@ -539,6 +540,11 @@ async function pageVariant(id) {
         route();
       }
     );
+  };
+
+  document.getElementById('btn-compare-var').onclick = function() {
+    _compareSlotA = { id: data.id, name: data.name, strategyName: stratName };
+    location.hash = '#/compare';
   };
 
   document.getElementById('btn-del-var').onclick = async function() {
