@@ -913,6 +913,110 @@ var _compareChart = null;
 var _compareSlotA = null;
 var _compareSlotB = null;
 var _comparePeriodMode = 'common'; // 'common' | 'individual'
+var _temporalCountChart = null;
+var _temporalPnlChart = null;
+var _temporalTradesA = [];
+var _temporalTradesB = [];
+var _temporalNameA = '';
+var _temporalNameB = '';
+
+function getBucketKey(dateStr, granularity) {
+  var d = new Date(dateStr);
+  if (granularity === 'day') return d.toISOString().slice(0, 10);
+  if (granularity === 'week') {
+    var tmp = new Date(d.getTime());
+    var day = tmp.getDay() || 7;
+    tmp.setDate(tmp.getDate() + 4 - day);
+    var yearStart = new Date(tmp.getFullYear(), 0, 1);
+    var weekNo = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
+    return tmp.getFullYear() + '-W' + String(weekNo).padStart(2, '0');
+  }
+  if (granularity === 'month') return dateStr.slice(0, 7);
+  if (granularity === 'year') return dateStr.slice(0, 4);
+  return dateStr.slice(0, 7);
+}
+
+function formatBucketLabel(key, granularity) {
+  var months = ['janv','fév','mars','avr','mai','juin','juil','août','sept','oct','nov','déc'];
+  if (granularity === 'day') {
+    var p = key.split('-');
+    return parseInt(p[2], 10) + ' ' + months[parseInt(p[1], 10) - 1] + ' ' + p[0].slice(2);
+  }
+  if (granularity === 'week') return key;
+  if (granularity === 'month') {
+    var p = key.split('-');
+    return months[parseInt(p[1], 10) - 1] + ' ' + p[0].slice(2);
+  }
+  return key;
+}
+
+function aggregateTrades(trades, granularity) {
+  var buckets = {};
+  trades.forEach(function(t) {
+    var key = getBucketKey(t.date, granularity);
+    if (!buckets[key]) buckets[key] = { count: 0, pnl: 0 };
+    buckets[key].count += 1;
+    buckets[key].pnl += t.pnl;
+  });
+  return buckets;
+}
+
+function renderTemporalCharts(granularity) {
+  if (_temporalCountChart) { _temporalCountChart.destroy(); _temporalCountChart = null; }
+  if (_temporalPnlChart) { _temporalPnlChart.destroy(); _temporalPnlChart = null; }
+
+  var canvasCount = document.getElementById('temporal-count-chart');
+  var canvasPnl = document.getElementById('temporal-pnl-chart');
+  if (!canvasCount || !canvasPnl) return;
+
+  var bucketsA = aggregateTrades(_temporalTradesA, granularity);
+  var bucketsB = aggregateTrades(_temporalTradesB, granularity);
+
+  var keySet = {};
+  Object.keys(bucketsA).forEach(function(k) { keySet[k] = true; });
+  Object.keys(bucketsB).forEach(function(k) { keySet[k] = true; });
+  var allKeys = Object.keys(keySet).sort();
+  if (allKeys.length === 0) return;
+
+  var labels = allKeys.map(function(k) { return formatBucketLabel(k, granularity); });
+  var countA = allKeys.map(function(k) { return bucketsA[k] ? bucketsA[k].count : 0; });
+  var countB = allKeys.map(function(k) { return bucketsB[k] ? bucketsB[k].count : 0; });
+  var pnlA = allKeys.map(function(k) { return bucketsA[k] ? Math.round(bucketsA[k].pnl * 100) / 100 : 0; });
+  var pnlB = allKeys.map(function(k) { return bucketsB[k] ? Math.round(bucketsB[k].pnl * 100) / 100 : 0; });
+
+  var chartOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { labels: { color: '#94a3b8' } } },
+    scales: {
+      x: { ticks: { color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 30 }, grid: { color: '#1e293b' } },
+      y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } }
+    }
+  };
+
+  _temporalCountChart = new Chart(canvasCount.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: _temporalNameA, data: countA, backgroundColor: 'rgba(59,130,246,0.7)', borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3 },
+        { label: _temporalNameB, data: countB, backgroundColor: 'rgba(245,158,11,0.7)', borderColor: '#f59e0b', borderWidth: 1, borderRadius: 3 },
+      ]
+    },
+    options: chartOpts
+  });
+
+  _temporalPnlChart = new Chart(canvasPnl.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: _temporalNameA, data: pnlA, backgroundColor: pnlA.map(function(v) { return v >= 0 ? 'rgba(59,130,246,0.7)' : 'rgba(59,130,246,0.3)'; }), borderColor: '#3b82f6', borderWidth: 1, borderRadius: 3 },
+        { label: _temporalNameB, data: pnlB, backgroundColor: pnlB.map(function(v) { return v >= 0 ? 'rgba(245,158,11,0.7)' : 'rgba(245,158,11,0.3)'; }), borderColor: '#f59e0b', borderWidth: 1, borderRadius: 3 },
+      ]
+    },
+    options: chartOpts
+  });
+}
 
 async function pageCompare() {
   APP.innerHTML = '<div class="fade-in">' +
@@ -1192,24 +1296,39 @@ async function loadComparison(va, vb, periodParams) {
       '</div>' +
       ((!a.latest_run && !b.latest_run) ? '<p class="text-center text-slate-400 py-8">Aucun run disponible pour la comparaison</p>' :
       '<div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden mb-6">' +
-        '<table class="w-full text-sm"><thead><tr class="border-b border-slate-700 text-slate-400">' +
-          '<th class="py-3 px-4 text-left bg-slate-800">Métrique</th>' +
-          '<th class="py-3 px-4 text-right bg-slate-800">' + esc(a.name) + '</th>' +
-          '<th class="py-3 px-4 text-center bg-slate-800 w-12"></th>' +
-          '<th class="py-3 px-4 text-left bg-slate-800">' + esc(b.name) + '</th>' +
+        '<table class="w-full text-sm" style="table-layout:fixed"><thead><tr class="border-b border-slate-700 text-slate-400">' +
+          '<th class="py-3 px-4 text-left bg-slate-800" style="width:20%">Métrique</th>' +
+          '<th class="py-3 px-4 text-center bg-slate-800" style="width:35%">' + esc(a.name) + '</th>' +
+          '<th class="py-3 px-4 text-center bg-slate-800" style="width:6%"></th>' +
+          '<th class="py-3 px-4 text-center bg-slate-800" style="width:35%">' + esc(b.name) + '</th>' +
         '</tr></thead><tbody>' +
         metricRows.map(function(r) {
           return '<tr class="border-b border-slate-700/50 hover:bg-slate-700/20">' +
             '<td class="py-2.5 px-4 text-slate-300">' + r.label + '</td>' +
-            '<td class="py-2.5 px-4 text-right ' + (diff[r.key]==='A' ? 'bg-green-900/20' : '') + '">' + fmtVal(ma[r.key], r.fmt) + (diff[r.key]==='A' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
+            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='A' ? 'bg-green-900/20' : '') + '">' + fmtVal(ma[r.key], r.fmt) + (diff[r.key]==='A' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
             '<td class="py-2.5 px-4 text-center text-slate-600">vs</td>' +
-            '<td class="py-2.5 px-4 ' + (diff[r.key]==='B' ? 'bg-green-900/20' : '') + '">' + fmtVal(mb[r.key], r.fmt) + (diff[r.key]==='B' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
+            '<td class="py-2.5 px-4 text-center ' + (diff[r.key]==='B' ? 'bg-green-900/20' : '') + '">' + fmtVal(mb[r.key], r.fmt) + (diff[r.key]==='B' ? ' <span class="text-green-400 text-xs">✓</span>' : '') + '</td>' +
           '</tr>';
         }).join('') +
         '</tbody></table></div>' +
-        '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6">' +
+        '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
           '<h3 class="text-lg font-semibold text-white mb-4">Equity Curves</h3>' +
           '<div style="height:300px"><canvas id="compare-chart"></canvas></div>' +
+        '</div>' +
+        '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
+          '<div class="flex items-center justify-between mb-3">' +
+            '<h3 class="text-lg font-semibold text-white">Analyse temporelle</h3>' +
+            '<div class="flex gap-1" id="granularity-btns">' +
+              '<button data-g="day" class="text-xs px-3 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-white transition">Jour</button>' +
+              '<button data-g="week" class="text-xs px-3 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-white transition">Semaine</button>' +
+              '<button data-g="month" class="text-xs px-3 py-1 rounded-lg border bg-blue-600 border-blue-500 text-white transition">Mois</button>' +
+              '<button data-g="year" class="text-xs px-3 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-white transition">Année</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+            '<div><h4 class="text-xs text-slate-400 mb-2">Nombre de trades</h4><div style="height:250px"><canvas id="temporal-count-chart"></canvas></div></div>' +
+            '<div><h4 class="text-xs text-slate-400 mb-2">PnL</h4><div style="height:250px"><canvas id="temporal-pnl-chart"></canvas></div></div>' +
+          '</div>' +
         '</div>');
 
     // Equity curves chart
@@ -1243,7 +1362,28 @@ async function loadComparison(va, vb, periodParams) {
         }
       });
     }
+
+    // Temporal analysis charts (with granularity selector)
+    _temporalTradesA = (a.latest_run && a.latest_run.trades) || [];
+    _temporalTradesB = (b.latest_run && b.latest_run.trades) || [];
+    _temporalNameA = a.name;
+    _temporalNameB = b.name;
+
+    if (_temporalTradesA.length > 0 || _temporalTradesB.length > 0) {
+      renderTemporalCharts('month');
+
+      document.querySelectorAll('#granularity-btns button').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          document.querySelectorAll('#granularity-btns button').forEach(function(b) {
+            b.className = 'text-xs px-3 py-1 rounded-lg border border-slate-600 text-slate-400 hover:text-white transition';
+          });
+          btn.className = 'text-xs px-3 py-1 rounded-lg border bg-blue-600 border-blue-500 text-white transition';
+          renderTemporalCharts(btn.getAttribute('data-g'));
+        });
+      });
+    }
   } catch (err) {
+    console.error('Compare error:', err);
     container.innerHTML = '<p class="text-red-400 text-center">' + esc(err.message) + '</p>';
   }
 }

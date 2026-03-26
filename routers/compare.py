@@ -58,11 +58,18 @@ def _get_latest_run_data(
                     "cumulative_pnl": round(cumulative, 2),
                 })
 
+    # Trades bruts (date + pnl) pour agrégation côté client
+    trade_points = [
+        {"date": t.close_time.isoformat(), "pnl": round(t.pnl, 2)}
+        for t in trades
+    ]
+
     return {
         "run_id": run.id,
         "label": run.label,
         "metrics": metrics,
         "equity_curve": equity_curve,
+        "trades": trade_points,
     }
 
 
