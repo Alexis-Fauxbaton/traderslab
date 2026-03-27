@@ -13,60 +13,49 @@ from services.metrics import compute_metrics
 router = APIRouter(prefix="/compare", tags=["compare"])
 
 
-def _get_latest_run_data(
+def _get_all_runs_aggregated_data(
     variant_id: str,
     db: Session,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
 ) -> dict[str, Any] | None:
-    """Récupère les données du run le plus récent d'une variante, optionnellement filtrées par période."""
-    run = (
+    """Agrège les trades de TOUS les runs d'une variante, filtrés optionnellement par période."""
+    runs = (
         db.query(Run)
         .filter(Run.variant_id == variant_id)
-        .order_by(Run.imported_at.desc())
-        .first()
+        .order_by(Run.imported_at.asc())
+        .all()
     )
-    if not run:
+    if not runs:
         return None
 
-    query = db.query(Trade).filter(Trade.run_id == run.id)
+    query = (
+        db.query(Trade)
+        .join(Run, Trade.run_id == Run.id)
+        .filter(Run.variant_id == variant_id)
+    )
     if start_date:
         query = query.filter(Trade.close_time >= datetime.combine(start_date, datetime.min.time()))
     if end_date:
         query = query.filter(Trade.close_time <= datetime.combine(end_date, datetime.max.time()))
     trades = query.order_by(Trade.close_time).all()
 
-    # Si filtrage par période, recalculer les métriques sur les trades filtrés
-    if start_date or end_date:
-        trade_dicts = [
-            {"close_time": t.close_time, "pnl": t.pnl}
-            for t in trades
-        ]
-        metrics = compute_metrics(trade_dicts)
-        equity_curve = metrics.pop("equity_curve", [])
-    else:
-        metrics = run.metrics
-        equity_curve = []
-        if run.metrics and "equity_curve" in run.metrics:
-            equity_curve = run.metrics["equity_curve"]
-        else:
-            cumulative = 0.0
-            for t in trades:
-                cumulative += t.pnl
-                equity_curve.append({
-                    "date": t.close_time.isoformat(),
-                    "cumulative_pnl": round(cumulative, 2),
-                })
+    if not trades:
+        return None
 
-    # Trades bruts (date + pnl) pour agrégation côté client
+    trade_dicts = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades]
+    metrics = compute_metrics(trade_dicts)
+    equity_curve = metrics.pop("equity_curve", [])
+
     trade_points = [
         {"date": t.close_time.isoformat(), "pnl": round(t.pnl, 2)}
         for t in trades
     ]
 
+    n = len(runs)
     return {
-        "run_id": run.id,
-        "label": run.label,
+        "run_id": None,
+        "label": f"{n} run{'s' if n > 1 else ''} agr\u00e9g\u00e9{'s' if n > 1 else ''}",
         "metrics": metrics,
         "equity_curve": equity_curve,
         "trades": trade_points,
@@ -154,8 +143,8 @@ def compare_variants(
     sd_b = start_date_b or start_date
     ed_b = end_date_b or end_date
 
-    data_a = _get_latest_run_data(variant_a, db, sd_a, ed_a)
-    data_b = _get_latest_run_data(variant_b, db, sd_b, ed_b)
+    data_a = _get_all_runs_aggregated_data(variant_a, db, sd_a, ed_a)
+    data_b = _get_all_runs_aggregated_data(variant_b, db, sd_b, ed_b)
 
     metrics_a = data_a["metrics"] if data_a else None
     metrics_b = data_b["metrics"] if data_b else None

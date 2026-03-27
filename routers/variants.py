@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models.variant import Variant
 from models.run import Run
+from models.trade import Trade
+from services.metrics import compute_metrics
 from schemas.variant import (
     VariantCreate,
     VariantUpdate,
@@ -66,6 +68,25 @@ def delete_variant(variant_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "Variante introuvable")
     db.delete(variant)
     db.commit()
+
+
+@router.get("/{variant_id}/metrics")
+def get_variant_metrics(variant_id: str, db: Session = Depends(get_db)):
+    """Retourne les métriques agrégées de tous les runs d'une variante."""
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(404, "Variante introuvable")
+    trades_rows = (
+        db.query(Trade)
+        .join(Run, Trade.run_id == Run.id)
+        .filter(Run.variant_id == variant_id)
+        .order_by(Trade.close_time)
+        .all()
+    )
+    if not trades_rows:
+        return {"aggregate_metrics": None}
+    trade_dicts = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades_rows]
+    return {"aggregate_metrics": compute_metrics(trade_dicts)}
 
 
 @router.get("/{variant_id}/lineage", response_model=VariantLineageNode)

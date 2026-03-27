@@ -1175,7 +1175,11 @@ async function pageStrategy(id) {
 // ===== PAGE: VARIANT DETAIL =====
 
 async function pageVariant(id) {
-  var data = await API.get('/variants/' + id);
+  var [data, metricsResp] = await Promise.all([
+    API.get('/variants/' + id),
+    API.get('/variants/' + id + '/metrics').catch(function() { return {aggregate_metrics: null}; }),
+  ]);
+  var aggMetrics = metricsResp.aggregate_metrics;
   var lineage = null;
   try { lineage = await API.get('/variants/' + id + '/lineage'); } catch(e) {}
   var stratName = 'Stratégie';
@@ -1226,6 +1230,33 @@ async function pageVariant(id) {
       '<h2 class="text-lg font-semibold text-white mb-3">Lignée</h2>' +
       '<div class="text-sm">' + renderLineageTree(lineage, id) + '</div>' +
     '</div>' : '') +
+    (aggMetrics && aggMetrics.total_trades > 0 ? (function() {
+      _currentAvgLoss = aggMetrics.avg_loss;
+      var ddPeak = _unitSettings.initial_balance + (aggMetrics.dd_peak_equity || 0);
+      var rr = (aggMetrics.avg_win && aggMetrics.avg_loss && aggMetrics.avg_loss !== 0) ? Math.abs(aggMetrics.avg_win / aggMetrics.avg_loss) : null;
+      var aggItems = [
+        {label:'Total PnL', value: formatPnl(aggMetrics.total_pnl)},
+        {label:'Trades', value: aggMetrics.total_trades},
+        {label:'Win Rate', value: formatPercent(aggMetrics.win_rate)},
+        {label:'Profit Factor', value: aggMetrics.profit_factor != null ? aggMetrics.profit_factor.toFixed(2) : '—'},
+        {label:'Max Drawdown', value: formatDrawdown(aggMetrics.max_drawdown, ddPeak)},
+        {label:'Expectancy', value: formatPnl(aggMetrics.expectancy)},
+        {label:'Avg Win', value: formatPnl(aggMetrics.avg_win)},
+        {label:'Avg Loss', value: formatPnl(aggMetrics.avg_loss)},
+        {label:'RR Moyen', value: rr != null ? rr.toFixed(2) : '—'},
+      ];
+      return '<div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">' +
+        '<h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Métriques agrégées — ' + data.runs.length + ' run' + (data.runs.length > 1 ? 's' : '') + '</h2>' +
+        '<div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">' +
+          aggItems.map(function(it) {
+            return '<div class="bg-slate-700/40 rounded-lg px-3 py-2 text-center">' +
+              '<div class="text-xs text-slate-500 mb-0.5">' + it.label + '</div>' +
+              '<div class="text-sm font-semibold text-white">' + it.value + '</div>' +
+            '</div>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    })() : '') +
     '<div class="flex items-center justify-between mb-4">' +
       '<h2 class="text-lg font-semibold text-white">Runs (' + data.runs.length + ')</h2>' +
       '<a href="#/import/' + id + '" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition inline-block">📥 Importer CSV</a>' +
