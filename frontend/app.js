@@ -924,11 +924,15 @@ function showNewStrategyModal() {
 
 var APP = document.getElementById('app');
 
+function saveLastVisit(hash, crumbs) {
+  try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now(), crumbs: crumbs || null })); } catch(e) {}
+}
+
 async function route() {
   var hash = location.hash.slice(1) || '/';
-  // Track last visited page (excluding dashboard itself)
+  // Sauvegarde minimale au moment du routage (sans les noms — enrichie ensuite depuis chaque page)
   if (hash !== '/') {
-    try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now() })); } catch(e) {}
+    try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now(), crumbs: null })); } catch(e) {}
   }
   APP.innerHTML = spinner();
   try {
@@ -1014,17 +1018,34 @@ async function pageDashboard() {
   function resumeBanner() {
     if (!lastVisit || !lastVisit.hash) return '';
     var hash = lastVisit.hash;
-    var label = hash;
-    var m2;
-    if ((m2 = hash.match(/^\/strategy\/(.+)$/))) label = 'Stratégie';
-    else if ((m2 = hash.match(/^\/variant\/(.+)$/))) label = 'Variante';
-    else if ((m2 = hash.match(/^\/run\/(.+)$/))) label = 'Run';
-    else if (hash === '/compare') label = 'Comparaison';
     var ago = timeAgo(lastVisit.ts);
+    var crumbs = lastVisit.crumbs;
+
+    var pathHtml;
+    if (crumbs && crumbs.length > 0) {
+      // Arborescence enrichie : Stratégie > Variante > Run
+      pathHtml = crumbs.map(function(c, i) {
+        var isLast = i === crumbs.length - 1;
+        var labelHtml = isLast
+          ? '<strong class="text-blue-200">' + esc(c.label) + '</strong>'
+          : '<span class="text-blue-300/70">' + esc(c.label) + '</span>';
+        return labelHtml + (isLast ? '' : '<span class="text-blue-500/50 mx-1">›</span>');
+      }).join('');
+    } else {
+      // Fallback label simple
+      var label = hash;
+      var m2;
+      if ((m2 = hash.match(/^\/strategy\/(.+)$/))) label = 'Stratégie';
+      else if ((m2 = hash.match(/^\/variant\/(.+)$/))) label = 'Variante';
+      else if ((m2 = hash.match(/^\/run\/(.+)$/))) label = 'Run';
+      else if (hash === '/compare') label = 'Comparaison';
+      pathHtml = '<strong class="text-blue-200">' + esc(label) + '</strong>';
+    }
+
     return '<div class="mb-5">' +
       '<a href="#' + esc(hash) + '" class="inline-flex items-center gap-2 bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 transition text-blue-300 px-4 py-2.5 rounded-lg text-sm">' +
         '<span>↩</span>' +
-        '<span>Reprendre — <strong class="text-blue-200">' + esc(label) + '</strong></span>' +
+        '<span>Reprendre — ' + pathHtml + '</span>' +
         '<span class="text-blue-400/50 text-xs">(' + esc(ago) + ')</span>' +
       '</a>' +
     '</div>';
@@ -1310,6 +1331,7 @@ function renderStrategyGraph(containerId, variants, varMetrics) {
 async function pageStrategy(id) {
   var data = await API.get('/strategies/' + id);
   var variantsSummary = await API.get('/strategies/' + id + '/variants-summary');
+  saveLastVisit('/strategy/' + id, [{ label: 'Stratégies', href: '#/' }, { label: data.name }]);
 
   // Build a lookup map from summary data
   var varMetrics = {};
@@ -1497,6 +1519,7 @@ async function pageVariant(id) {
   if (data.parent_variant_id) {
     try { parentName = (await API.get('/variants/' + data.parent_variant_id)).name; } catch(e) {}
   }
+  saveLastVisit('/variant/' + id, [{ label: 'Stratégies', href: '#/' }, { label: stratName, href: '#/strategy/' + data.strategy_id }, { label: data.name }]);
 
   // Évaluation de la variante
   var variantEvalHtml = '';
@@ -1678,6 +1701,7 @@ async function pageRun(id) {
     stratId = variant.strategy_id;
     stratName = (await API.get('/strategies/' + stratId)).name;
   } catch(e) {}
+  saveLastVisit('/run/' + id, [{ label: 'Stratégies', href: '#/' }, { label: stratName, href: '#/strategy/' + stratId }, { label: variantName, href: '#/variant/' + data.variant_id }, { label: data.label }]);
 
   _currentAvgLoss = m.avg_loss;
   var _ddPeak = _unitSettings.initial_balance + (m.dd_peak_equity || 0);
