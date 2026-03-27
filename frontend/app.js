@@ -125,9 +125,15 @@ function emptyState(message, actionLabel, actionHref) {
 
 // ===== MODAL =====
 
-function showModal(title, bodyHtml, onSubmit) {
+function showModal(title, bodyHtml, onSubmit, options) {
+  options = options || {};
   var overlay = document.getElementById('modal-overlay');
   var content = document.getElementById('modal-content');
+  if (options.wide) {
+    content.className = 'bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto';
+  } else {
+    content.className = 'bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto';
+  }
   content.innerHTML = '<h3 class="text-lg font-semibold text-white mb-4">' + esc(title) + '</h3>' +
     '<form id="modal-form">' + bodyHtml +
       '<div class="flex justify-end gap-3 mt-6">' +
@@ -139,6 +145,11 @@ function showModal(title, bodyHtml, onSubmit) {
   overlay.classList.add('flex');
   document.getElementById('modal-cancel').onclick = closeModal;
   overlay.onclick = function(e) { if (e.target === overlay) closeModal(); };
+
+  if (options.richText) {
+    setTimeout(function() { initRichEditors(); }, 50);
+  }
+
   document.getElementById('modal-form').onsubmit = async function(e) {
     e.preventDefault();
     try { await onSubmit(new FormData(e.target)); closeModal(); }
@@ -150,6 +161,8 @@ function closeModal() {
   var overlay = document.getElementById('modal-overlay');
   overlay.classList.add('hidden');
   overlay.classList.remove('flex');
+  var content = document.getElementById('modal-content');
+  content.className = 'bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto';
 }
 
 function inputField(name, label, type, required, value) {
@@ -163,6 +176,308 @@ function textareaField(name, label, required, value) {
   return '<div class="mb-3"><label class="block text-sm text-slate-300 mb-1">' + esc(label) + '</label>' +
     '<textarea name="' + name + '" ' + (required ? 'required' : '') + ' rows="2"' +
     ' class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none">' + esc(value || '') + '</textarea></div>';
+}
+
+// ===== RICH TEXT EDITOR (contenteditable) =====
+
+function richTextField(name, label, value) {
+  var id = 'rich-' + name;
+  var encoded = esc(JSON.stringify(value || ''));
+  return '<div class="mb-3"><label class="block text-sm text-slate-300 mb-1">' + esc(label) + '</label>' +
+    '<div class="rich-editor" id="' + id + '" data-field-name="' + name + '" data-initial="' + encoded + '">' +
+      '<div class="rich-toolbar">' +
+        '<button type="button" data-cmd="bold" title="Gras (Ctrl+B)"><strong>G</strong></button>' +
+        '<button type="button" data-cmd="italic" title="Italique (Ctrl+I)"><em>I</em></button>' +
+        '<button type="button" data-cmd="underline" title="Souligné (Ctrl+U)"><u>S</u></button>' +
+        '<span class="rich-sep"></span>' +
+        '<button type="button" data-cmd="insertUnorderedList" title="Liste à puces">• ≡</button>' +
+        '<button type="button" data-cmd="insertOrderedList" title="Liste numérotée">1.</button>' +
+        '<button type="button" data-cmd="checklist" title="Checklist">☑</button>' +
+      '</div>' +
+      '<div class="rich-content" contenteditable="true" data-placeholder="Saisissez du texte…"></div>' +
+    '</div>' +
+  '</div>';
+}
+
+function normalizeRichValue(val) {
+  if (!val) return '';
+  try {
+    var data = typeof val === 'string' ? JSON.parse(val) : val;
+    if (data && typeof data === 'object' && data.blocks) {
+      return editorjsBlocksToHtml(data.blocks);
+    }
+    if (typeof data === 'string') return data;
+  } catch(e) {}
+  return val;
+}
+
+function editorjsBlocksToHtml(blocks) {
+  var html = '';
+  blocks.forEach(function(b) {
+    switch(b.type) {
+      case 'paragraph': html += '<p>' + (b.data.text || '') + '</p>'; break;
+      case 'header': html += '<h' + b.data.level + '>' + (b.data.text || '') + '</h' + b.data.level + '>'; break;
+      case 'list':
+        var tag = b.data.style === 'ordered' ? 'ol' : 'ul';
+        html += '<' + tag + '>';
+        (b.data.items || []).forEach(function(item) {
+          var text = typeof item === 'string' ? item : (item.content || item.text || '');
+          html += '<li>' + text + '</li>';
+        });
+        html += '</' + tag + '>'; break;
+      case 'checklist':
+        html += '<ul class="checklist">';
+        (b.data.items || []).forEach(function(item) {
+          html += '<li' + (item.checked ? ' class="checked"' : '') + '>' + (item.text || '') + '</li>';
+        });
+        html += '</ul>'; break;
+      case 'quote': html += '<blockquote>' + (b.data.text || '') + '</blockquote>'; break;
+      case 'delimiter': html += '<hr>'; break;
+      default: if (b.data && b.data.text) html += '<p>' + b.data.text + '</p>';
+    }
+  });
+  return html;
+}
+
+function initRichEditors() {
+  document.querySelectorAll('.rich-editor').forEach(function(editor) {
+    var name = editor.getAttribute('data-field-name');
+    var raw = editor.getAttribute('data-initial');
+    var content = editor.querySelector('.rich-content');
+    var val = '';
+    if (raw) {
+      try { val = normalizeRichValue(JSON.parse(raw)); } catch(e) { val = raw; }
+    }
+    content.innerHTML = val;
+
+    // Toolbar buttons
+    editor.querySelectorAll('.rich-toolbar button[data-cmd]').forEach(function(btn) {
+      btn.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        content.focus();
+        var cmd = btn.getAttribute('data-cmd');
+        if (cmd === 'checklist') {
+          toggleChecklist(content);
+        } else {
+          document.execCommand(cmd, false, null);
+        }
+        updateToolbarState(editor);
+      });
+    });
+
+    // Update toolbar on selection/input change
+    content.addEventListener('keyup', function() { updateToolbarState(editor); });
+    content.addEventListener('mouseup', function() { updateToolbarState(editor); });
+
+    // Checklist toggle on click in checkbox zone
+    content.addEventListener('mousedown', function(e) {
+      var li = e.target.closest('ul.checklist > li');
+      if (li) {
+        var rect = li.getBoundingClientRect();
+        if (e.clientX - rect.left < 28) {
+          e.preventDefault();
+          li.classList.toggle('checked');
+        }
+      }
+    });
+
+    // Notion-style shortcuts: detect patterns on input
+    content.addEventListener('input', function() {
+      handleNotionShortcuts(content, editor);
+    });
+
+    // Handle Enter inside checklist to keep checklist mode
+    content.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        var sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        var el = sel.anchorNode;
+        el = el && el.nodeType === 3 ? el.parentElement : el;
+        var li = el ? el.closest('ul.checklist > li') : null;
+        if (li) {
+          // If current li is empty, break out of the list
+          if (!li.textContent.trim()) {
+            e.preventDefault();
+            var ul = li.closest('ul.checklist');
+            li.remove();
+            if (ul && ul.children.length === 0) ul.remove();
+            document.execCommand('insertParagraph', false, null);
+            return;
+          }
+        }
+      }
+      // Tab inside list = indent, Shift+Tab = outdent
+      if (e.key === 'Tab') {
+        var sel = window.getSelection();
+        if (!sel.rangeCount) return;
+        var el = sel.anchorNode;
+        el = el && el.nodeType === 3 ? el.parentElement : el;
+        if (el && el.closest('li')) {
+          e.preventDefault();
+          document.execCommand(e.shiftKey ? 'outdent' : 'indent', false, null);
+        }
+      }
+    });
+  });
+}
+
+function handleNotionShortcuts(content, editor) {
+  var sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return;
+
+  var node = sel.anchorNode;
+  if (!node || node.nodeType !== 3) return;
+  var textNode = node;
+  var text = textNode.textContent;
+
+  // Only trigger at the start of a block-level element
+  var blockEl = textNode.parentElement;
+  while (blockEl && blockEl !== content && !isBlockElement(blockEl)) {
+    blockEl = blockEl.parentElement;
+  }
+  if (!blockEl || blockEl === content) blockEl = textNode.parentElement;
+
+  // Don't trigger inside an already-formatted list
+  if (blockEl.closest('ul') || blockEl.closest('ol')) return;
+
+  // Pattern: "- " or "* " → bullet list
+  if (/^[-*]\s$/.test(text)) {
+    clearTextAndExec(textNode, blockEl, content, function() {
+      document.execCommand('insertUnorderedList', false, null);
+    });
+    updateToolbarState(editor);
+    return;
+  }
+
+  // Pattern: "1. " → numbered list
+  if (/^1\.\s$/.test(text)) {
+    clearTextAndExec(textNode, blockEl, content, function() {
+      document.execCommand('insertOrderedList', false, null);
+    });
+    updateToolbarState(editor);
+    return;
+  }
+
+  // Pattern: "[] " or "[ ] " → checklist
+  if (/^\[\s?\]\s$/.test(text)) {
+    clearTextAndExec(textNode, blockEl, content, function() {
+      document.execCommand('insertUnorderedList', false, null);
+      var sel2 = window.getSelection();
+      if (sel2.rangeCount) {
+        var el = sel2.anchorNode;
+        el = el && el.nodeType === 3 ? el.parentElement : el;
+        while (el && el !== content) {
+          if (el.tagName === 'UL') { el.classList.add('checklist'); break; }
+          el = el.parentElement;
+        }
+      }
+    });
+    updateToolbarState(editor);
+    return;
+  }
+}
+
+function isBlockElement(el) {
+  if (!el || !el.tagName) return false;
+  return /^(P|DIV|H[1-6]|LI|BLOCKQUOTE|PRE|UL|OL)$/.test(el.tagName);
+}
+
+function clearTextAndExec(textNode, blockEl, content, execFn) {
+  // Remove the trigger text, then execute the command
+  textNode.textContent = '\u200B'; // zero-width space to keep caret position
+  var range = document.createRange();
+  range.setStart(textNode, 1);
+  range.collapse(true);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  execFn();
+  // Clean up zero-width space
+  setTimeout(function() {
+    var s = window.getSelection();
+    if (s.rangeCount) {
+      var n = s.anchorNode;
+      if (n && n.nodeType === 3 && n.textContent === '\u200B') {
+        n.textContent = '';
+      }
+    }
+  }, 0);
+}
+
+function toggleChecklist(content) {
+  var sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  var node = sel.anchorNode;
+  var el = node && node.nodeType === 3 ? node.parentElement : node;
+  var ul = null;
+  while (el && el !== content) {
+    if (el.tagName === 'UL') { ul = el; break; }
+    el = el.parentElement;
+  }
+  if (ul && ul.classList.contains('checklist')) {
+    ul.classList.remove('checklist');
+    ul.querySelectorAll('li').forEach(function(li) { li.classList.remove('checked'); });
+  } else if (ul) {
+    ul.classList.add('checklist');
+  } else {
+    document.execCommand('insertUnorderedList', false, null);
+    var node2 = sel.anchorNode;
+    var el2 = node2 && node2.nodeType === 3 ? node2.parentElement : node2;
+    while (el2 && el2 !== content) {
+      if (el2.tagName === 'UL') { el2.classList.add('checklist'); break; }
+      el2 = el2.parentElement;
+    }
+  }
+}
+
+function updateToolbarState(editor) {
+  editor.querySelectorAll('.rich-toolbar button[data-cmd]').forEach(function(btn) {
+    var cmd = btn.getAttribute('data-cmd');
+    if (cmd === 'checklist') {
+      var sel = window.getSelection();
+      var inCL = false;
+      if (sel.rangeCount) {
+        var el = sel.anchorNode;
+        el = el && el.nodeType === 3 ? el.parentElement : el;
+        while (el) {
+          if (el.classList && el.classList.contains('checklist')) { inCL = true; break; }
+          el = el.parentElement;
+        }
+      }
+      btn.classList.toggle('active', inCL);
+    } else if (cmd === 'insertUnorderedList') {
+      btn.classList.toggle('active', document.queryCommandState(cmd));
+    } else {
+      btn.classList.toggle('active', document.queryCommandState(cmd));
+    }
+  });
+}
+
+function getRichValue(name) {
+  var editor = document.querySelector('.rich-editor[data-field-name="' + name + '"]');
+  if (!editor) return '';
+  var content = editor.querySelector('.rich-content');
+  if (!content) return '';
+  var html = content.innerHTML.trim();
+  if (!html || html === '<br>' || html === '<p><br></p>') return '';
+  return html;
+}
+
+function renderRichText(val) {
+  if (!val) return '<span class="text-slate-600 italic">non renseigné</span>';
+  var html = normalizeRichValue(val);
+  if (!html || !html.trim()) return '<span class="text-slate-600 italic">non renseigné</span>';
+  return '<div class="rich-display">' + html + '</div>';
+}
+
+function richTextPlain(val, maxLen) {
+  if (!val) return '';
+  var html = normalizeRichValue(val);
+  var tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  var text = tmp.textContent || tmp.innerText || '';
+  if (maxLen && text.length > maxLen) text = text.substring(0, maxLen) + '…';
+  return text;
 }
 
 function selectField(name, label, options, selected) {
@@ -375,8 +690,7 @@ async function pageDashboard() {
         var hasMet = m && m.total_trades > 0;
         _currentAvgLoss = hasMet ? m.avg_loss : null;
         var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
-        var desc = s.description || '';
-        if (desc.length > 120) desc = desc.substring(0, 120) + '…';
+        var desc = richTextPlain(s.description, 120);
         return '<a href="#/strategy/' + s.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
           '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(s.name) + '</h3>' +
@@ -588,8 +902,7 @@ async function pageStrategy(id) {
         var hasMet = m && m.total_trades > 0;
         _currentAvgLoss = hasMet ? m.avg_loss : null;
         var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
-        var desc = v.description || '';
-        if (desc.length > 120) desc = desc.substring(0, 120) + '…';
+        var desc = richTextPlain(v.description, 120);
         return '<a href="#/variant/' + v.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
           '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(v.name) + '</h3>' +
@@ -691,12 +1004,12 @@ async function pageStrategy(id) {
       .concat(data.variants.map(function(v) { return {value: v.id, label: v.name}; }));
     showModal('Nouvelle Variante',
       inputField('name', 'Nom') +
-      textareaField('description', 'Description') +
+      richTextField('description', 'Description') +
       selectField('parent_variant_id', 'Variante parente', parentOpts) +
-      textareaField('hypothesis', 'Hypothèse testée') +
-      textareaField('changes', 'Ce qui change') +
-      textareaField('change_reason', 'Raison du changement') +
-      textareaField('decision', 'Conclusion après test') +
+      richTextField('hypothesis', 'Hypothèse testée') +
+      richTextField('changes', 'Ce qui change') +
+      richTextField('change_reason', 'Raison du changement') +
+      richTextField('decision', 'Conclusion après test') +
       selectField('status', 'Statut', [
         {value:'active',label:'Active'},{value:'testing',label:'Testing'},
         {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
@@ -704,15 +1017,18 @@ async function pageStrategy(id) {
       async function(fd) {
         await API.post('/variants', {
           strategy_id: id, name: fd.get('name'),
-          description: fd.get('description'), hypothesis: fd.get('hypothesis'),
-          changes: fd.get('changes'), change_reason: fd.get('change_reason'),
-          decision: fd.get('decision'),
+          description: getRichValue('description'),
+          hypothesis: getRichValue('hypothesis'),
+          changes: getRichValue('changes'),
+          change_reason: getRichValue('change_reason'),
+          decision: getRichValue('decision'),
           parent_variant_id: fd.get('parent_variant_id') || null,
           status: fd.get('status'),
         });
         await loadSidebar();
         route();
-      }
+      },
+      { richText: true, wide: true }
     );
   };
 }
@@ -730,7 +1046,7 @@ async function pageVariant(id) {
     try { parentName = (await API.get('/variants/' + data.parent_variant_id)).name; } catch(e) {}
   }
 
-  var infoVal = function(val) { return val ? '<span class="text-white">' + esc(val) + '</span>' : '<span class="text-slate-600 italic">non renseigné</span>'; };
+  var infoVal = function(val) { return renderRichText(val); };
   var infoCards = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm mt-4">' +
     '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Créée le</div><div class="text-slate-300">' + formatDate(data.created_at) + '</div></div>' +
     '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Variante parente</div><div>' +
@@ -757,7 +1073,7 @@ async function pageVariant(id) {
             '<h1 class="text-2xl font-bold text-white">' + esc(data.name) + '</h1>' +
             statusBadge(data.status) +
           '</div>' +
-          '<p class="text-slate-400 text-sm">' + (esc(data.description) || 'Pas de description') + '</p>' +
+          '<p class="text-slate-400 text-sm">' + renderRichText(data.description) + '</p>' +
         '</div>' +
         '<div class="flex gap-2">' +
           '<button id="btn-compare-var" class="text-sm text-blue-400 hover:text-blue-300 px-3 py-1.5 rounded-lg border border-blue-900 hover:border-blue-700 transition">⚖ Comparer</button>' +
@@ -803,25 +1119,29 @@ async function pageVariant(id) {
   document.getElementById('btn-edit-var').onclick = function() {
     showModal('Modifier la Variante',
       inputField('name', 'Nom', 'text', true, data.name) +
-      textareaField('description', 'Description', false, data.description) +
-      textareaField('hypothesis', 'Hypothèse testée', false, data.hypothesis) +
-      textareaField('changes', 'Ce qui change', false, data.changes) +
-      textareaField('change_reason', 'Raison du changement', false, data.change_reason) +
-      textareaField('decision', 'Conclusion après test', false, data.decision) +
+      richTextField('description', 'Description', data.description) +
+      richTextField('hypothesis', 'Hypothèse testée', data.hypothesis) +
+      richTextField('changes', 'Ce qui change', data.changes) +
+      richTextField('change_reason', 'Raison du changement', data.change_reason) +
+      richTextField('decision', 'Conclusion après test', data.decision) +
       selectField('status', 'Statut', [
         {value:'active',label:'Active'},{value:'testing',label:'Testing'},
         {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
       ], data.status),
       async function(fd) {
         await API.put('/variants/' + id, {
-          name: fd.get('name'), description: fd.get('description'),
-          hypothesis: fd.get('hypothesis'), changes: fd.get('changes'),
-          change_reason: fd.get('change_reason'), decision: fd.get('decision'),
+          name: fd.get('name'),
+          description: getRichValue('description'),
+          hypothesis: getRichValue('hypothesis'),
+          changes: getRichValue('changes'),
+          change_reason: getRichValue('change_reason'),
+          decision: getRichValue('decision'),
           status: fd.get('status'),
         });
         await loadSidebar();
         route();
-      }
+      },
+      { richText: true, wide: true }
     );
   };
 
