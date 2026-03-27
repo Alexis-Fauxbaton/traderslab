@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -11,6 +12,106 @@ from schemas.variant import VariantOut
 from services.metrics import compute_metrics
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
+
+
+@router.get("/dashboard/activity")
+def dashboard_activity(db: Session = Depends(get_db)):
+    """Données d'activité récente pour le dashboard home."""
+    recent_variants = (
+        db.query(Variant, Strategy)
+        .join(Strategy, Variant.strategy_id == Strategy.id)
+        .order_by(Variant.created_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    recent_runs = (
+        db.query(Run, Variant, Strategy)
+        .join(Variant, Run.variant_id == Variant.id)
+        .join(Strategy, Variant.strategy_id == Strategy.id)
+        .order_by(Run.imported_at.desc())
+        .limit(5)
+        .all()
+    )
+
+    to_review = (
+        db.query(Variant, Strategy)
+        .join(Strategy, Variant.strategy_id == Strategy.id)
+        .filter(Variant.status.in_(["testing", "active"]))
+        .filter((Variant.decision == None) | (Variant.decision == ""))
+        .order_by(Variant.created_at.desc())
+        .limit(8)
+        .all()
+    )
+
+    variant_pnl_rows = (
+        db.query(
+            Variant.id,
+            Variant.name,
+            Strategy.name.label("strategy_name"),
+            Strategy.id.label("strategy_id"),
+            func.sum(Trade.pnl).label("total_pnl"),
+        )
+        .join(Run, Trade.run_id == Run.id)
+        .join(Variant, Run.variant_id == Variant.id)
+        .join(Strategy, Variant.strategy_id == Strategy.id)
+        .group_by(Variant.id, Variant.name, Strategy.name, Strategy.id)
+        .all()
+    )
+
+    best = max(variant_pnl_rows, key=lambda x: x.total_pnl, default=None)
+    worst = min(variant_pnl_rows, key=lambda x: x.total_pnl, default=None)
+
+    return {
+        "recent_variants": [
+            {
+                "id": v.id,
+                "name": v.name,
+                "status": v.status,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "strategy_id": s.id,
+                "strategy_name": s.name,
+            }
+            for v, s in recent_variants
+        ],
+        "recent_runs": [
+            {
+                "id": r.id,
+                "label": r.label,
+                "type": r.type,
+                "imported_at": r.imported_at.isoformat() if r.imported_at else None,
+                "variant_id": v.id,
+                "variant_name": v.name,
+                "strategy_id": s.id,
+                "strategy_name": s.name,
+            }
+            for r, v, s in recent_runs
+        ],
+        "to_review": [
+            {
+                "id": v.id,
+                "name": v.name,
+                "status": v.status,
+                "strategy_id": s.id,
+                "strategy_name": s.name,
+            }
+            for v, s in to_review
+        ],
+        "best_variant": {
+            "id": best.id,
+            "name": best.name,
+            "strategy_id": best.strategy_id,
+            "strategy_name": best.strategy_name,
+            "total_pnl": float(best.total_pnl),
+        } if best else None,
+        "worst_variant": {
+            "id": worst.id,
+            "name": worst.name,
+            "strategy_id": worst.strategy_id,
+            "strategy_name": worst.strategy_name,
+            "total_pnl": float(worst.total_pnl),
+        } if worst else None,
+    }
 
 
 @router.get("/dashboard")

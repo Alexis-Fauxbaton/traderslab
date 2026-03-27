@@ -94,6 +94,19 @@ function formatDateTime(d) {
   return new Date(d).toLocaleString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function timeAgo(d) {
+  if (!d) return '—';
+  var ms = Date.now() - new Date(d).getTime();
+  var s = Math.floor(ms / 1000);
+  if (s < 60) return 'à l\'instant';
+  var m = Math.floor(s / 60); if (m < 60) return 'il y a ' + m + ' min';
+  var h = Math.floor(m / 60); if (h < 24) return 'il y a ' + h + 'h';
+  var days = Math.floor(h / 24); if (days < 7) return 'il y a ' + days + 'j';
+  var weeks = Math.floor(days / 7); if (weeks < 5) return 'il y a ' + weeks + 'sem';
+  var months = Math.floor(days / 30); if (months < 12) return 'il y a ' + months + ' mois';
+  return 'il y a ' + Math.floor(months / 12) + ' an(s)';
+}
+
 function formatPercent(n) {
   if (n == null) return '—';
   return (n * 100).toFixed(1) + '%';
@@ -604,6 +617,10 @@ var APP = document.getElementById('app');
 
 async function route() {
   var hash = location.hash.slice(1) || '/';
+  // Track last visited page (excluding dashboard itself)
+  if (hash !== '/') {
+    try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now() })); } catch(e) {}
+  }
   APP.innerHTML = spinner();
   try {
     var m;
@@ -676,13 +693,135 @@ function initUnitSystem() {
 var _dashboardCharts = [];
 
 async function pageDashboard() {
-  var strategies = await API.get('/strategies/dashboard');
+  var [strategies, activity] = await Promise.all([
+    API.get('/strategies/dashboard'),
+    API.get('/strategies/dashboard/activity'),
+  ]);
+
+  // --- "Reprendre" banner ---
+  var lastVisit = null;
+  try { lastVisit = JSON.parse(localStorage.getItem('lastVisit')); } catch (e) {}
+
+  function resumeBanner() {
+    if (!lastVisit || !lastVisit.hash) return '';
+    var hash = lastVisit.hash;
+    var label = hash;
+    var m2;
+    if ((m2 = hash.match(/^\/strategy\/(.+)$/))) label = 'Stratégie';
+    else if ((m2 = hash.match(/^\/variant\/(.+)$/))) label = 'Variante';
+    else if ((m2 = hash.match(/^\/run\/(.+)$/))) label = 'Run';
+    else if (hash === '/compare') label = 'Comparaison';
+    var ago = timeAgo(lastVisit.ts);
+    return '<div class="mb-5">' +
+      '<a href="#' + esc(hash) + '" class="inline-flex items-center gap-2 bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 transition text-blue-300 px-4 py-2.5 rounded-lg text-sm">' +
+        '<span>↩</span>' +
+        '<span>Reprendre — <strong class="text-blue-200">' + esc(label) + '</strong></span>' +
+        '<span class="text-blue-400/50 text-xs">(' + esc(ago) + ')</span>' +
+      '</a>' +
+    '</div>';
+  }
+
+  // --- Widget helpers ---
+  function widgetCard(title, icon, content) {
+    return '<div class="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col">' +
+      '<h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">' +
+        '<span>' + icon + '</span>' + title +
+      '</h3>' +
+      content +
+    '</div>';
+  }
+
+  function rowLink(href, primary, secondary, badge) {
+    return '<a href="' + esc(href) + '" class="flex items-center justify-between py-1.5 hover:bg-slate-700/40 -mx-2 px-2 rounded transition group">' +
+      '<div class="min-w-0 flex-1">' +
+        '<p class="truncate text-slate-200 text-xs group-hover:text-blue-400 transition">' + esc(primary) + '</p>' +
+        (secondary ? '<p class="text-slate-500 text-xs truncate">' + esc(secondary) + '</p>' : '') +
+      '</div>' +
+      (badge ? '<span class="ml-2 shrink-0 text-slate-500 text-xs">' + badge + '</span>' : '') +
+    '</a>';
+  }
+
+  // --- Recent variants widget ---
+  function recentVariantsContent() {
+    if (!activity.recent_variants || activity.recent_variants.length === 0)
+      return '<p class="text-slate-500 text-xs italic">Aucune variante</p>';
+    return activity.recent_variants.map(function(v) {
+      return rowLink('#/variant/' + v.id, v.name, v.strategy_name, timeAgo(v.created_at));
+    }).join('');
+  }
+
+  // --- Recent imports widget ---
+  function recentRunsContent() {
+    if (!activity.recent_runs || activity.recent_runs.length === 0)
+      return '<p class="text-slate-500 text-xs italic">Aucun import</p>';
+    return activity.recent_runs.map(function(r) {
+      return rowLink('#/run/' + r.id, r.label || r.type, r.variant_name, timeAgo(r.imported_at));
+    }).join('');
+  }
+
+  // --- To review widget ---
+  function toReviewContent() {
+    if (!activity.to_review || activity.to_review.length === 0)
+      return '<p class="text-slate-500 text-xs text-green-400/70">Tout est à jour ✓</p>';
+    var badgeCount = activity.to_review.length;
+    var rows = activity.to_review.map(function(v) {
+      var badgeClass = v.status === 'testing' ? 'text-yellow-400' : 'text-blue-400';
+      var badge = '<span class="' + badgeClass + '">' + esc(v.status) + '</span>';
+      return rowLink('#/variant/' + v.id, v.name, v.strategy_name, badge);
+    }).join('');
+    return rows;
+  }
+
+  // --- Best / worst widget ---
+  function performancesContent() {
+    var b = activity.best_variant, w = activity.worst_variant;
+    if (!b && !w) return '<p class="text-slate-500 text-xs italic">Pas encore de données</p>';
+    var html = '';
+    if (b) {
+      html += '<div class="mb-3">' +
+        '<p class="text-xs text-slate-500 mb-1">🏆 Meilleure variante</p>' +
+        '<a href="#/variant/' + esc(b.id) + '" class="group block">' +
+          '<p class="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">' + esc(b.name) + '</p>' +
+          '<p class="text-xs text-slate-500 truncate">' + esc(b.strategy_name) + '</p>' +
+          '<p class="text-green-400 text-sm font-semibold mt-0.5">' + (b.total_pnl >= 0 ? '+' : '') + b.total_pnl.toFixed(2) + '</p>' +
+        '</a>' +
+      '</div>';
+    }
+    if (w && (!b || w.id !== b.id)) {
+      html += '<div>' +
+        '<p class="text-xs text-slate-500 mb-1">↓ Pire variante</p>' +
+        '<a href="#/variant/' + esc(w.id) + '" class="group block">' +
+          '<p class="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">' + esc(w.name) + '</p>' +
+          '<p class="text-xs text-slate-500 truncate">' + esc(w.strategy_name) + '</p>' +
+          '<p class="text-red-400 text-sm font-semibold mt-0.5">' + (w.total_pnl >= 0 ? '+' : '') + w.total_pnl.toFixed(2) + '</p>' +
+        '</a>' +
+      '</div>';
+    }
+    return html;
+  }
+
+  var hasActivity = (activity.recent_variants && activity.recent_variants.length > 0) ||
+                    (activity.recent_runs && activity.recent_runs.length > 0) ||
+                    (activity.to_review && activity.to_review.length > 0) ||
+                    activity.best_variant;
 
   APP.innerHTML = '<div class="fade-in">' +
     '<div class="flex items-center justify-between mb-6">' +
       '<h1 class="text-2xl font-bold text-white">Mes Stratégies</h1>' +
       '<button id="btn-new-strat" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Stratégie</button>' +
     '</div>' +
+
+    resumeBanner() +
+
+    (hasActivity ?
+      '<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">' +
+        widgetCard('Variantes récentes', '🧪', recentVariantsContent()) +
+        widgetCard('Derniers imports', '📥', recentRunsContent()) +
+        widgetCard('À revoir', '🔍', toReviewContent()) +
+        widgetCard('Performances', '🏆', performancesContent()) +
+      '</div>'
+    : '') +
+
     (strategies.length === 0 ? emptyState('Aucune stratégie créée') :
     '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' +
       strategies.map(function(s, idx) {
