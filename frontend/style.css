@@ -1,20 +1,72 @@
-* { scrollbar-width: thin; scrollbar-color: #475569 #1e293b; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #64748b; }
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Chiffres tabulaires sur les valeurs métriques */
+.tabular-nums,
+.metric-value,
+[class*="text-green"], [class*="text-red"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+* { scrollbar-width: thin; scrollbar-color: #334155 #0f172a; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
 
 /* Sidebar */
-.sidebar { width: 280px; transition: width 0.2s ease, opacity 0.2s ease; }
+.sidebar { width: 280px; min-width: 160px; max-width: 520px; transition: width 0.2s ease, opacity 0.2s ease; }
 .sidebar.collapsed { width: 0; overflow: hidden; opacity: 0; padding: 0; }
+.sidebar.resizing { transition: none; }
+
+/* Sidebar resize handle — sits between sidebar and main in the flex row */
+.sidebar-resize-handle {
+  width: 12px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+  z-index: 20;
+  margin-left: -6px;   /* centre la zone de 12px sur le bord droit de la sidebar */
+  margin-right: -6px;
+}
+/* La ligne visible (1px) centrée dans la zone de 12px */
+.sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 5px;   /* (12px - 2px) / 2 */
+  width: 2px;
+  height: 100%;
+  background: #334155;   /* slate-700, visible en permanence */
+  transition: background 0.15s;
+  pointer-events: none;
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle.active::after {
+  background: #3b82f6;
+}
+.sidebar.collapsed + .sidebar-resize-handle {
+  display: none;
+}
 
 /* Sidebar tree */
 .strat-toggle { cursor: pointer; user-select: none; }
 .strat-toggle:hover { background: rgba(255,255,255,0.04); }
-.strat-toggle .chevron { transition: transform 0.15s; display: inline-block; font-size: 10px; }
-.strat-toggle.open .chevron { transform: rotate(90deg); }
-.variant-list { overflow: hidden; transition: max-height 0.2s ease; }
-.variant-list.collapsed { max-height: 0 !important; }
+.strat-toggle .chevron {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  color: #94a3b8;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s;
+}
+.strat-toggle:hover .chevron { color: #e2e8f0; }
+.strat-toggle.open .chevron { transform: rotate(90deg); color: #e2e8f0; }
+.variant-list { overflow: hidden; transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1); max-height: 0; }
 
 /* Sidebar variant item — draggable */
 .sidebar-variant { cursor: grab; user-select: none; transition: background 0.1s; border-radius: 6px; }

@@ -65,7 +65,7 @@ def _get_all_runs_aggregated_data(
 # Métriques où une valeur plus haute est meilleure
 _HIGHER_IS_BETTER = {
     "total_pnl", "win_rate", "profit_factor", "expectancy",
-    "avg_win", "best_trade", "total_trades",
+    "avg_win", "best_trade", "total_trades", "sharpe_ratio",
 }
 # Métriques où une valeur plus basse (en valeur absolue) est meilleure
 _LOWER_IS_BETTER = {"max_drawdown", "worst_trade", "avg_loss"}

@@ -9,7 +9,7 @@ from models.variant import Variant
 from schemas.run import RunOut, RunDetail, RunImportResponse
 from schemas.trade import TradeOut
 from services.csv_parser import parse_csv
-from services.metrics import compute_metrics
+from services.metrics import compute_metrics, _compute_sharpe_annualized
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -30,6 +30,14 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     if not run:
         raise HTTPException(404, "Run introuvable")
     trades = db.query(Trade).filter(Trade.run_id == run_id).order_by(Trade.close_time).all()
+
+    # Migration lazy : recalcule sharpe_ratio si absent des métriques stockées
+    if run.metrics is not None and "sharpe_ratio" not in run.metrics:
+        trades_data = [{"pnl": t.pnl, "close_time": t.close_time} for t in trades]
+        sorted_td = sorted(trades_data, key=lambda x: x["close_time"])
+        run.metrics = {**run.metrics, "sharpe_ratio": _compute_sharpe_annualized(sorted_td)}
+        db.commit()
+
     return RunDetail(
         **RunOut.model_validate(run).model_dump(),
         trades=[TradeOut.model_validate(t) for t in trades],

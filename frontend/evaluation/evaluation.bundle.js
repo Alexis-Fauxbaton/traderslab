@@ -59,6 +59,7 @@
       compareMetric(a.expectancy, b.expectancy, true, 'expectancy', 2),
       compareMetric(a.winRate, b.winRate, true, 'winRate', 1),
       compareMetric(a.profitFactor, b.profitFactor, true, 'profitFactor', 1),
+      compareMetric(a.sharpeRatio, b.sharpeRatio, true, 'sharpeRatio', 2),
     ];
     var scoreA = details.reduce(function (acc, d) { return acc + d.gainA; }, 0);
     var scoreB = details.reduce(function (acc, d) { return acc + d.gainB; }, 0);
@@ -219,6 +220,25 @@
     return null;
   }
 
+  function warnLowSharpe(sharpeRatio, target) {
+    if (sharpeRatio === null || sharpeRatio === undefined) return null;
+    if (sharpeRatio < 0) {
+      return {
+        code: 'NEGATIVE_SHARPE', severity: 'medium', title: 'Sharpe ratio négatif',
+        message: 'Le Sharpe ratio annualisé est négatif (' + sharpeRatio.toFixed(2) + '). La stratégie détruit de la valeur ajustée au risque.',
+        target: target,
+      };
+    }
+    if (sharpeRatio < 0.5) {
+      return {
+        code: 'LOW_SHARPE', severity: 'low', title: 'Sharpe ratio faible',
+        message: 'Le Sharpe ratio annualisé est bas (' + sharpeRatio.toFixed(2) + '). Un ratio > 1 est généralement souhaitable.',
+        target: target,
+      };
+    }
+    return null;
+  }
+
   function collectRunWarnings(metrics, target) {
     var warnings = [];
     var push = function (w) { if (w) warnings.push(w); };
@@ -229,6 +249,7 @@
     push(warnUnreliableProfitFactor(metrics.tradeCount, metrics.totalNegativePnl, target));
     push(warnUnreliableExpectancy(metrics.tradeCount, target));
     push(warnMissingCoreMetrics(metrics.pnl, metrics.winRate, metrics.profitFactor, target));
+    push(warnLowSharpe(metrics.sharpeRatio, target));
     return warnings;
   }
 
@@ -286,7 +307,7 @@
       : 'Espérance mathématique négative (' + expectancy.toFixed(2) + ')';
   }
 
-  var METRIC_LABELS = { pnl: 'PnL', maxDrawdown: 'Drawdown', expectancy: 'Expectancy', winRate: 'Win Rate', profitFactor: 'Profit Factor' };
+  var METRIC_LABELS = { pnl: 'PnL', maxDrawdown: 'Drawdown', expectancy: 'Expectancy', winRate: 'Win Rate', profitFactor: 'Profit Factor', sharpeRatio: 'Sharpe' };
 
   function strengthSentenceForWinner(metric, winner, winnerName, loserName) {
     if (winner === 'n/a' || winner === 'tie') return null;
@@ -431,7 +452,7 @@
       tradeCount: run.tradeCount, pnl: run.pnl, winRate: run.winRate,
       profitFactor: run.profitFactor, coveredDays: run.coveredDays,
       totalNegativePnl: run.totalNegativePnl, bestTrade: run.bestTrade,
-      totalPositivePnl: run.totalPositivePnl,
+      totalPositivePnl: run.totalPositivePnl, sharpeRatio: run.sharpeRatio,
     }, 'run');
 
     if (run.tradeCount === 0) {
@@ -497,7 +518,7 @@
       tradeCount: variant.tradeCount, pnl: variant.pnl, winRate: variant.winRate,
       profitFactor: variant.profitFactor, coveredDays: variant.coveredDays,
       totalNegativePnl: variant.totalNegativePnl, bestTrade: variant.bestTrade,
-      totalPositivePnl: variant.totalPositivePnl,
+      totalPositivePnl: variant.totalPositivePnl, sharpeRatio: variant.sharpeRatio,
     }, 'variant');
 
     var mixedWarn = warnMixedRunTypes(variant.runTypes || [], 'variant');
@@ -578,13 +599,13 @@
     var warningsA = collectRunWarnings({
       tradeCount: a.tradeCount, pnl: a.pnl, winRate: a.winRate, profitFactor: a.profitFactor,
       coveredDays: a.coveredDays, totalNegativePnl: a.totalNegativePnl,
-      bestTrade: a.bestTrade, totalPositivePnl: a.totalPositivePnl,
+      bestTrade: a.bestTrade, totalPositivePnl: a.totalPositivePnl, sharpeRatio: a.sharpeRatio,
     }, 'a');
 
     var warningsB = collectRunWarnings({
       tradeCount: b.tradeCount, pnl: b.pnl, winRate: b.winRate, profitFactor: b.profitFactor,
       coveredDays: b.coveredDays, totalNegativePnl: b.totalNegativePnl,
-      bestTrade: b.bestTrade, totalPositivePnl: b.totalPositivePnl,
+      bestTrade: b.bestTrade, totalPositivePnl: b.totalPositivePnl, sharpeRatio: b.sharpeRatio,
     }, 'b');
 
     var comparisonWarnings = [];

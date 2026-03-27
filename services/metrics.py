@@ -1,6 +1,47 @@
 """Service de calcul des métriques de performance à partir d'une liste de trades."""
 
+import math
 from datetime import datetime
+
+
+def _compute_sharpe_annualized(
+    sorted_trades: list[dict],
+    risk_free_rate: float = 0.0,
+) -> float | None:
+    """Calcule le Sharpe ratio annualisé par trade.
+
+    Méthode :
+      1. Extraire les PnL de chaque trade (trades à PnL = 0 ignorés).
+      2. Calculer mean et std (ddof=1) sur cette liste.
+      3. Estimer trades_per_year = n / years, où years est la durée entre
+         le close_time du premier et du dernier trade.
+      4. sharpe = (mean / std) * sqrt(trades_per_year)
+
+    Retourne None si std == 0, moins de 2 trades non-nuls, ou durée nulle.
+    """
+    pnls = [t["pnl"] for t in sorted_trades if t["pnl"] != 0]
+    n = len(pnls)
+    if n < 2:
+        return None
+
+    mean_r = sum(pnls) / n
+    variance = sum((p - mean_r) ** 2 for p in pnls) / (n - 1)
+    std_r = math.sqrt(variance)
+    if std_r == 0:
+        return None
+
+    first_ct = sorted_trades[0]["close_time"]
+    last_ct = sorted_trades[-1]["close_time"]
+    delta_seconds = (last_ct - first_ct).total_seconds()
+    if delta_seconds <= 0:
+        return None
+
+    years = delta_seconds / (365.25 * 24 * 3600)
+    trades_per_year = n / years
+    rf_per_trade = risk_free_rate / trades_per_year
+
+    sharpe = ((mean_r - rf_per_trade) / std_r) * math.sqrt(trades_per_year)
+    return round(sharpe, 4)
 
 
 def compute_metrics(trades: list[dict]) -> dict:
@@ -25,6 +66,7 @@ def compute_metrics(trades: list[dict]) -> dict:
             "best_trade": 0.0,
             "worst_trade": 0.0,
             "equity_curve": [],
+            "sharpe_ratio": None,
         }
 
     # Tri chronologique par close_time
@@ -104,4 +146,5 @@ def compute_metrics(trades: list[dict]) -> dict:
         "best_trade": round(best_trade, 2),
         "worst_trade": round(worst_trade, 2),
         "equity_curve": equity_points,
+        "sharpe_ratio": _compute_sharpe_annualized(sorted_trades),
     }

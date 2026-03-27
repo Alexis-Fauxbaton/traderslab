@@ -56,6 +56,7 @@ function buildRunMetrics(data) {
     avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
     bestTrade: m.best_trade !== undefined ? m.best_trade : null,
     worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    sharpeRatio: m.sharpe_ratio !== undefined ? m.sharpe_ratio : null,
     totalPositivePnl: totalPositivePnl,
     totalNegativePnl: totalNegativePnl,
     periodStart: data.start_date || null,
@@ -108,6 +109,7 @@ function buildVariantMetrics(variantData, aggMetrics, runs) {
     avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
     bestTrade: m.best_trade !== undefined ? m.best_trade : null,
     worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    sharpeRatio: m.sharpe_ratio !== undefined ? m.sharpe_ratio : null,
     totalPositivePnl: totalPositivePnl,
     totalNegativePnl: totalNegativePnl,
     coveredDays: coveredDays,
@@ -153,6 +155,7 @@ function buildVariantMetricsForCompare(variantData, metricsData, trades) {
     avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
     bestTrade: m.best_trade !== undefined ? m.best_trade : null,
     worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    sharpeRatio: m.sharpe_ratio !== undefined ? m.sharpe_ratio : null,
     totalPositivePnl: totalPositivePnl,
     totalNegativePnl: totalNegativePnl,
     coveredDays: coveredDays,
@@ -842,12 +845,12 @@ function renderSidebar() {
     var varCount = s.variants ? s.variants.length : 0;
     html += '<div class="mb-1">' +
       '<div class="strat-toggle ' + (isOpen ? 'open' : '') + ' flex items-center gap-2 px-2 py-1.5 rounded-md text-sm" data-strat-id="' + s.id + '">' +
-        '<span class="chevron text-slate-500">▶</span>' +
+        '<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.5l4 3.5-4 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
         '<a href="#/strategy/' + s.id + '" class="flex-1 text-slate-200 hover:text-white truncate font-medium" title="' + esc(s.name) + '">' + esc(s.name) + '</a>' +
         '<span class="text-xs text-slate-500">' + varCount + '</span>' +
       '</div>';
 
-    html += '<div class="variant-list pl-5 ' + (isOpen ? '' : 'collapsed') + '" style="max-height:' + (isOpen ? (varCount * 40 + 10) + 'px' : '0') + '">';
+    html += '<div class="variant-list pl-5" style="max-height:' + (isOpen ? (varCount * 40 + 10) + 'px' : '0') + '">';
     if (s.variants) {
       s.variants.forEach(function(v) {
         html += '<div class="sidebar-variant flex items-center gap-2 px-2 py-1 text-xs" draggable="true" data-variant-id="' + v.id + '" data-variant-name="' + esc(v.name) + '" data-strategy-name="' + esc(s.name) + '">' +
@@ -862,13 +865,16 @@ function renderSidebar() {
 
   tree.innerHTML = html;
 
-  // Bind expand/collapse
+  // Bind expand/collapse — toggle in place pour conserver l'animation CSS
   tree.querySelectorAll('.strat-toggle').forEach(function(el) {
     el.addEventListener('click', function(e) {
       if (e.target.tagName === 'A') return;
       var stratId = el.getAttribute('data-strat-id');
       _expandedStrategies[stratId] = !_expandedStrategies[stratId];
-      renderSidebar();
+      var isOpen = _expandedStrategies[stratId];
+      el.classList.toggle('open', isOpen);
+      var list = el.nextElementSibling;
+      list.style.maxHeight = isOpen ? list.scrollHeight + 'px' : '0';
     });
   });
 
@@ -896,6 +902,40 @@ function setupSidebar() {
   });
   document.getElementById('btn-new-strat-sidebar').addEventListener('click', function() {
     showNewStrategyModal();
+  });
+
+  // Resize handle
+  var sidebar = document.getElementById('sidebar');
+  var handle = document.getElementById('sidebar-resize-handle');
+  var STORAGE_KEY = 'sidebar_width';
+
+  var saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+  if (saved && saved >= 160 && saved <= 520) sidebar.style.width = saved + 'px';
+
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var startX = e.clientX;
+    var startW = sidebar.offsetWidth;
+    sidebar.classList.add('resizing');
+    handle.classList.add('active');
+
+    function onMove(e) {
+      var w = Math.min(520, Math.max(160, startW + e.clientX - startX));
+      sidebar.style.width = w + 'px';
+    }
+    function onUp() {
+      sidebar.classList.remove('resizing');
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(STORAGE_KEY, parseInt(sidebar.style.width, 10));
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
   });
 }
 
@@ -1585,6 +1625,7 @@ async function pageVariant(id) {
         {label:'Avg Win', value: formatPnl(aggMetrics.avg_win)},
         {label:'Avg Loss', value: formatPnl(aggMetrics.avg_loss)},
         {label:'RR Moyen', value: rr != null ? rr.toFixed(2) : '—'},
+        {label:'Sharpe (ann.)', value: aggMetrics.sharpe_ratio != null ? aggMetrics.sharpe_ratio.toFixed(2) : '—'},
       ];
       return '<div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">' +
         '<h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Métriques agrégées — ' + data.runs.length + ' run' + (data.runs.length > 1 ? 's' : '') + '</h2>' +
@@ -1716,6 +1757,7 @@ async function pageRun(id) {
     {label: 'Avg Loss', value: formatPnl(m.avg_loss)},
     {label: 'Best Trade', value: formatPnl(m.best_trade)},
     {label: 'Worst Trade', value: formatPnl(m.worst_trade)},
+    {label: 'Sharpe (ann.)', value: m.sharpe_ratio != null ? m.sharpe_ratio.toFixed(2) : '—'},
   ];
 
   // Évaluation du run
@@ -2488,6 +2530,7 @@ async function loadComparison(va, vb, periodParams) {
       {key: 'avg_loss', label: 'Avg Loss'},
       {key: 'best_trade', label: 'Best Trade'},
       {key: 'worst_trade', label: 'Worst Trade'},
+      {key: 'sharpe_ratio', label: 'Sharpe (ann.)', fmt: 'num'},
     ];
 
     function fmtVal(val, fmt, ddPeak, avgLoss) {
