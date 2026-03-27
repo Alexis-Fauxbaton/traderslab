@@ -19,6 +19,315 @@ var _unitSettings = JSON.parse(localStorage.getItem('unitSettings') || 'null') |
 // Risque moyen (|avg_loss|) du contexte courant — mis à jour avant chaque rendu de section
 var _currentAvgLoss = null;
 
+// ===== EVALUATION ENGINE HELPERS =====
+
+/**
+ * Construit un objet RunMetrics à partir des données brutes de l'API.
+ * Normalise le max_drawdown en ratio (0–1) en le divisant par le pic d'equity.
+ */
+function buildRunMetrics(data) {
+  var m = data.metrics || {};
+  var ib = _unitSettings.initial_balance || 10000;
+  var ddPeak = ib + (m.dd_peak_equity || 0);
+  var maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+
+  var totalTrades = m.total_trades || 0;
+  var winCount = Math.round((m.win_rate || 0) * totalTrades);
+  var lossCount = totalTrades - winCount;
+  var totalPositivePnl = (m.avg_win || 0) * winCount;
+  var totalNegativePnl = (m.avg_loss || 0) * lossCount; // avg_loss < 0 → négatif
+
+  var coveredDays = null;
+  if (data.start_date && data.end_date) {
+    coveredDays = Math.round((new Date(data.end_date) - new Date(data.start_date)) / 86400000);
+  }
+
+  return {
+    id: data.id,
+    name: data.label,
+    runType: data.type || 'backtest',
+    tradeCount: totalTrades,
+    pnl: m.total_pnl !== undefined ? m.total_pnl : null,
+    winRate: m.win_rate !== undefined ? m.win_rate : null,
+    profitFactor: m.profit_factor !== undefined ? m.profit_factor : null,
+    expectancy: m.expectancy !== undefined ? m.expectancy : null,
+    maxDrawdown: maxDDRatio,
+    avgWin: m.avg_win !== undefined ? m.avg_win : null,
+    avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
+    bestTrade: m.best_trade !== undefined ? m.best_trade : null,
+    worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    totalPositivePnl: totalPositivePnl,
+    totalNegativePnl: totalNegativePnl,
+    periodStart: data.start_date || null,
+    periodEnd: data.end_date || null,
+    coveredDays: coveredDays,
+  };
+}
+
+/**
+ * Construit un objet VariantMetrics depuis les métriques agrégées et les runs de la variante.
+ */
+function buildVariantMetrics(variantData, aggMetrics, runs) {
+  if (!aggMetrics) return null;
+  var m = aggMetrics;
+  var ib = _unitSettings.initial_balance || 10000;
+  var ddPeak = ib + (m.dd_peak_equity || 0);
+  var maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+
+  var totalTrades = m.total_trades || 0;
+  var winCount = Math.round((m.win_rate || 0) * totalTrades);
+  var lossCount = totalTrades - winCount;
+  var totalPositivePnl = (m.avg_win || 0) * winCount;
+  var totalNegativePnl = (m.avg_loss || 0) * lossCount;
+
+  var allDates = [];
+  (runs || []).forEach(function (r) {
+    if (r.start_date) allDates.push(new Date(r.start_date));
+    if (r.end_date) allDates.push(new Date(r.end_date));
+  });
+  var coveredDays = null;
+  if (allDates.length >= 2) {
+    var minDate = allDates.reduce(function (a, b) { return a < b ? a : b; });
+    var maxDate = allDates.reduce(function (a, b) { return a > b ? a : b; });
+    coveredDays = Math.round((maxDate - minDate) / 86400000);
+  }
+
+  var runTypes = (runs || []).map(function (r) { return r.type; })
+    .filter(function (v, i, arr) { return arr.indexOf(v) === i; });
+
+  return {
+    id: variantData.id,
+    name: variantData.name,
+    tradeCount: totalTrades,
+    pnl: m.total_pnl !== undefined ? m.total_pnl : null,
+    winRate: m.win_rate !== undefined ? m.win_rate : null,
+    profitFactor: m.profit_factor !== undefined ? m.profit_factor : null,
+    expectancy: m.expectancy !== undefined ? m.expectancy : null,
+    maxDrawdown: maxDDRatio,
+    avgWin: m.avg_win !== undefined ? m.avg_win : null,
+    avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
+    bestTrade: m.best_trade !== undefined ? m.best_trade : null,
+    worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    totalPositivePnl: totalPositivePnl,
+    totalNegativePnl: totalNegativePnl,
+    coveredDays: coveredDays,
+    runTypes: runTypes,
+    runsCount: (runs || []).length,
+  };
+}
+
+/**
+ * Construit un VariantMetrics pour la page de comparaison
+ * (données venant de l'endpoint /compare, sans info sur les runs individuels).
+ */
+function buildVariantMetricsForCompare(variantData, metricsData, trades) {
+  if (!metricsData) return null;
+  var m = metricsData;
+  var ib = _unitSettings.initial_balance || 10000;
+  var ddPeak = ib + (m.dd_peak_equity || 0);
+  var maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+
+  var totalTrades = m.total_trades || 0;
+  var winCount = Math.round((m.win_rate || 0) * totalTrades);
+  var lossCount = totalTrades - winCount;
+  var totalPositivePnl = (m.avg_win || 0) * winCount;
+  var totalNegativePnl = (m.avg_loss || 0) * lossCount;
+
+  var coveredDays = null;
+  if (trades && trades.length >= 2) {
+    var t0 = new Date(trades[0].date);
+    var tN = new Date(trades[trades.length - 1].date);
+    coveredDays = Math.round((tN - t0) / 86400000);
+  }
+
+  return {
+    id: variantData.id,
+    name: variantData.name,
+    tradeCount: totalTrades,
+    pnl: m.total_pnl !== undefined ? m.total_pnl : null,
+    winRate: m.win_rate !== undefined ? m.win_rate : null,
+    profitFactor: m.profit_factor !== undefined ? m.profit_factor : null,
+    expectancy: m.expectancy !== undefined ? m.expectancy : null,
+    maxDrawdown: maxDDRatio,
+    avgWin: m.avg_win !== undefined ? m.avg_win : null,
+    avgLoss: m.avg_loss !== undefined ? m.avg_loss : null,
+    bestTrade: m.best_trade !== undefined ? m.best_trade : null,
+    worstTrade: m.worst_trade !== undefined ? m.worst_trade : null,
+    totalPositivePnl: totalPositivePnl,
+    totalNegativePnl: totalNegativePnl,
+    coveredDays: coveredDays,
+    runTypes: [],
+    runsCount: null,
+  };
+}
+
+// Couleurs par verdict
+var VERDICT_STYLES = {
+  promising:    { badge: 'bg-green-900/30 text-green-400 border border-green-700',  dot: 'bg-green-400'  },
+  fragile:      { badge: 'bg-yellow-900/30 text-yellow-400 border border-yellow-700', dot: 'bg-yellow-400' },
+  inconclusive: { badge: 'bg-slate-700/60 text-slate-400 border border-slate-600',  dot: 'bg-slate-400'  },
+  invalid:      { badge: 'bg-red-900/30 text-red-400 border border-red-700',        dot: 'bg-red-400'    },
+};
+var COMP_VERDICT_STYLES = {
+  promote_a:    { badge: 'bg-green-900/30 text-green-400 border border-green-700',   dot: 'bg-green-400'  },
+  promote_b:    { badge: 'bg-green-900/30 text-green-400 border border-green-700',   dot: 'bg-green-400'  },
+  keep_testing: { badge: 'bg-yellow-900/30 text-yellow-400 border border-yellow-700', dot: 'bg-yellow-400' },
+  inconclusive: { badge: 'bg-slate-700/60 text-slate-400 border border-slate-600',   dot: 'bg-slate-400'  },
+};
+var WARN_COLORS = {
+  high:   'border-red-800 bg-red-900/20 text-red-300',
+  medium: 'border-yellow-800 bg-yellow-900/20 text-yellow-300',
+  low:    'border-slate-600 bg-slate-700/30 text-slate-300',
+};
+var CONF_COLORS = { high: 'text-green-400', medium: 'text-yellow-400', low: 'text-red-400' };
+
+/**
+ * Génère le HTML d'un panneau d'évaluation (run ou variante).
+ */
+function renderEvaluationPanel(result, title) {
+  if (!result || typeof Evaluation === 'undefined') return '';
+  title = title || 'Évaluation';
+  var vc = VERDICT_STYLES[result.verdict] || VERDICT_STYLES.inconclusive;
+  var cc = CONF_COLORS[result.confidence] || 'text-slate-400';
+
+  var verdictBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ' + vc.badge + '">' +
+    '<span class="w-1.5 h-1.5 rounded-full ' + vc.dot + '"></span>' +
+    Evaluation.verdictLabel(result.verdict) + '</span>';
+
+  var html = '<div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">' +
+    '<div class="flex items-center justify-between mb-3">' +
+      '<h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide">' + esc(title) + '</h2>' +
+      '<div class="flex items-center gap-2">' + verdictBadge +
+        '<span class="text-xs ' + cc + '">Confiance&nbsp;: ' + Evaluation.confidenceLabel(result.confidence) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<p class="text-sm text-slate-300 mb-3">' + esc(result.summary) + '</p>';
+
+  if (result.reasons && result.reasons.length) {
+    html += '<div class="text-xs text-slate-500 mb-3">' +
+      result.reasons.map(function (r) { return '→ ' + esc(r); }).join('<br>') +
+    '</div>';
+  }
+
+  var hasSW = (result.strengths && result.strengths.length) || (result.weaknesses && result.weaknesses.length);
+  if (hasSW) {
+    html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">';
+    if (result.strengths && result.strengths.length) {
+      html += '<div><div class="text-xs font-medium text-green-400 mb-1">✓ Points forts</div><ul class="space-y-0.5">' +
+        result.strengths.map(function (s) { return '<li class="text-xs text-slate-300">• ' + esc(s) + '</li>'; }).join('') +
+      '</ul></div>';
+    }
+    if (result.weaknesses && result.weaknesses.length) {
+      html += '<div><div class="text-xs font-medium text-red-400 mb-1">✗ Points faibles</div><ul class="space-y-0.5">' +
+        result.weaknesses.map(function (s) { return '<li class="text-xs text-slate-300">• ' + esc(s) + '</li>'; }).join('') +
+      '</ul></div>';
+    }
+    html += '</div>';
+  }
+
+  if (result.warnings && result.warnings.length) {
+    html += '<div class="space-y-1.5 mb-3">';
+    result.warnings.forEach(function (w) {
+      html += '<div class="border rounded-lg px-3 py-2 text-xs ' + (WARN_COLORS[w.severity] || WARN_COLORS.low) + '">' +
+        '<span class="font-medium">' + esc(w.title) + '</span> — ' + esc(w.message) +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  if (result.nextSteps && result.nextSteps.length) {
+    html += '<div class="border-t border-slate-700 mt-3 pt-3">' +
+      '<div class="text-xs font-medium text-slate-400 mb-1.5">Prochaines étapes</div>' +
+      '<ul class="space-y-0.5">' +
+      result.nextSteps.map(function (s) { return '<li class="text-xs text-slate-300">→ ' + esc(s) + '</li>'; }).join('') +
+      '</ul></div>';
+  }
+
+  return html + '</div>';
+}
+
+/**
+ * Génère le HTML du panneau d'évaluation pour la comparaison A/B.
+ */
+function renderComparisonEvaluationPanel(result, nameA, nameB) {
+  if (!result || typeof Evaluation === 'undefined') return '';
+  var vc = COMP_VERDICT_STYLES[result.verdict] || COMP_VERDICT_STYLES.inconclusive;
+
+  var verdictBadge = '<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ' + vc.badge + '">' +
+    '<span class="w-1.5 h-1.5 rounded-full ' + vc.dot + '"></span>' +
+    Evaluation.comparisonVerdictLabel(result.verdict) + '</span>';
+
+  var scoreBar = '';
+  if (result.score && result.score.total > 0) {
+    var pctA = Math.round(result.score.scoreA / result.score.total * 100);
+    var pctB = Math.round(result.score.scoreB / result.score.total * 100);
+    scoreBar = '<div class="mb-3">' +
+      '<div class="flex items-center justify-between text-xs text-slate-400 mb-1">' +
+        '<span class="text-blue-400">' + esc(nameA) + ' — ' + result.score.scoreA + ' pts</span>' +
+        '<span class="text-slate-500">/ ' + result.score.total + ' pts</span>' +
+        '<span class="text-amber-400">' + result.score.scoreB + ' pts — ' + esc(nameB) + '</span>' +
+      '</div>' +
+      '<div class="flex h-2 rounded-full overflow-hidden bg-slate-700">' +
+        (pctA > 0 ? '<div class="bg-blue-500 transition-all" style="width:' + pctA + '%"></div>' : '') +
+        (pctB > 0 ? '<div class="bg-amber-500 ml-auto transition-all" style="width:' + pctB + '%"></div>' : '') +
+      '</div></div>';
+  }
+
+  var html = '<div class="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">' +
+    '<div class="flex items-center justify-between mb-3">' +
+      '<h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide">Évaluation comparative</h2>' +
+      verdictBadge +
+    '</div>' +
+    '<p class="text-sm text-slate-300 mb-3">' + esc(result.summary) + '</p>' +
+    scoreBar;
+
+  if (result.reasons && result.reasons.length) {
+    html += '<div class="text-xs text-slate-500 mb-3">' +
+      result.reasons.map(function (r) { return '→ ' + esc(r); }).join('<br>') +
+    '</div>';
+  }
+
+  html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">';
+  html += '<div class="border border-slate-700/60 rounded-lg p-3">' +
+    '<div class="text-xs font-medium text-blue-400 mb-2">' + esc(nameA) + '</div>';
+  (result.strengthsA || []).forEach(function (s) { html += '<div class="text-xs text-green-400">✓ ' + esc(s) + '</div>'; });
+  (result.weaknessesA || []).forEach(function (s) { html += '<div class="text-xs text-red-400">✗ ' + esc(s) + '</div>'; });
+  if (!(result.strengthsA || []).length && !(result.weaknessesA || []).length) {
+    html += '<div class="text-xs text-slate-600">—</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="border border-slate-700/60 rounded-lg p-3">' +
+    '<div class="text-xs font-medium text-amber-400 mb-2">' + esc(nameB) + '</div>';
+  (result.strengthsB || []).forEach(function (s) { html += '<div class="text-xs text-green-400">✓ ' + esc(s) + '</div>'; });
+  (result.weaknessesB || []).forEach(function (s) { html += '<div class="text-xs text-red-400">✗ ' + esc(s) + '</div>'; });
+  if (!(result.strengthsB || []).length && !(result.weaknessesB || []).length) {
+    html += '<div class="text-xs text-slate-600">—</div>';
+  }
+  html += '</div>';
+  html += '</div>';
+
+  if (result.warnings && result.warnings.length) {
+    html += '<div class="space-y-1.5 mb-3">';
+    result.warnings.forEach(function (w) {
+      html += '<div class="border rounded-lg px-3 py-2 text-xs ' + (WARN_COLORS[w.severity] || WARN_COLORS.low) + '">' +
+        '<span class="font-medium">[' + esc(w.target.toUpperCase()) + '] ' + esc(w.title) + '</span> — ' + esc(w.message) +
+      '</div>';
+    });
+    html += '</div>';
+  }
+
+  if (result.nextSteps && result.nextSteps.length) {
+    html += '<div class="border-t border-slate-700 mt-3 pt-3">' +
+      '<div class="text-xs font-medium text-slate-400 mb-1.5">Prochaines étapes</div>' +
+      '<ul class="space-y-0.5">' +
+      result.nextSteps.map(function (s) { return '<li class="text-xs text-slate-300">→ ' + esc(s) + '</li>'; }).join('') +
+      '</ul></div>';
+  }
+
+  return html + '</div>';
+}
+
 function saveUnitSettings() {
   localStorage.setItem('unitSettings', JSON.stringify(_unitSettings));
 }
@@ -1189,6 +1498,15 @@ async function pageVariant(id) {
     try { parentName = (await API.get('/variants/' + data.parent_variant_id)).name; } catch(e) {}
   }
 
+  // Évaluation de la variante
+  var variantEvalHtml = '';
+  if (typeof Evaluation !== 'undefined' && aggMetrics && aggMetrics.total_trades > 0) {
+    try {
+      var _varMetrics = buildVariantMetrics(data, aggMetrics, data.runs || []);
+      if (_varMetrics) variantEvalHtml = renderEvaluationPanel(Evaluation.evaluateVariant(_varMetrics), 'Évaluation de la variante');
+    } catch(e) {}
+  }
+
   var infoVal = function(val) { return renderRichText(val); };
   var infoCards = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm mt-4">' +
     '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Créée le</div><div class="text-slate-300">' + formatDate(data.created_at) + '</div></div>' +
@@ -1257,6 +1575,7 @@ async function pageVariant(id) {
         '</div>' +
       '</div>';
     })() : '') +
+    variantEvalHtml +
     '<div class="flex items-center justify-between mb-4">' +
       '<h2 class="text-lg font-semibold text-white">Runs (' + data.runs.length + ')</h2>' +
       '<a href="#/import/' + id + '" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition inline-block">📥 Importer CSV</a>' +
@@ -1375,6 +1694,15 @@ async function pageRun(id) {
     {label: 'Worst Trade', value: formatPnl(m.worst_trade)},
   ];
 
+  // Évaluation du run
+  var runEvalHtml = '';
+  if (typeof Evaluation !== 'undefined' && m.total_trades !== undefined) {
+    try {
+      var _runMetrics = buildRunMetrics(data);
+      runEvalHtml = renderEvaluationPanel(Evaluation.evaluateRun(_runMetrics), 'Évaluation du run');
+    } catch(e) {}
+  }
+
   APP.innerHTML = '<div class="fade-in">' +
     breadcrumb([
       {label:'Stratégies', href:'#/'},
@@ -1400,6 +1728,7 @@ async function pageRun(id) {
         '</div>';
       }).join('') +
     '</div>' +
+    runEvalHtml +
     '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
       '<div class="flex items-center justify-between mb-4">' +
         '<h2 class="text-lg font-semibold text-white">Equity Curve</h2>' +
@@ -2109,6 +2438,21 @@ async function loadComparison(va, vb, periodParams) {
     var mb = (b.latest_run && b.latest_run.metrics) || {};
     var diff = data.diff || {};
 
+    // Évaluation comparative
+    var compareEvalHtml = '';
+    if (typeof Evaluation !== 'undefined' && (a.latest_run || b.latest_run)) {
+      try {
+        var _tradesA = (a.latest_run && a.latest_run.trades) || [];
+        var _tradesB = (b.latest_run && b.latest_run.trades) || [];
+        var _vmA = buildVariantMetricsForCompare(a, a.latest_run ? ma : null, _tradesA);
+        var _vmB = buildVariantMetricsForCompare(b, b.latest_run ? mb : null, _tradesB);
+        if (_vmA && _vmB) {
+          var _compResult = Evaluation.evaluateVariantComparison({ variantA: _vmA, variantB: _vmB });
+          compareEvalHtml = renderComparisonEvaluationPanel(_compResult, a.name, b.name);
+        }
+      } catch(e) {}
+    }
+
     var metricRows = [
       {key: 'total_pnl', label: 'Total PnL'},
       {key: 'total_trades', label: 'Trades', fmt: 'int'},
@@ -2163,6 +2507,7 @@ async function loadComparison(va, vb, periodParams) {
           '</tr>';
         }).join('') +
         '</tbody></table></div>' +
+        compareEvalHtml +
         '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">' +
           '<h3 class="text-lg font-semibold text-white mb-4">Equity Curves</h3>' +
           '<div style="height:300px"><canvas id="compare-chart"></canvas></div>' +
