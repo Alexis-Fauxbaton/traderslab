@@ -853,10 +853,16 @@ function renderSidebar() {
     html += '<div class="variant-list pl-5" style="max-height:' + (isOpen ? (varCount * 40 + 10) + 'px' : '0') + '">';
     if (s.variants) {
       s.variants.forEach(function(v) {
-        html += '<div class="sidebar-variant flex items-center gap-2 px-2 py-1 text-xs" draggable="true" data-variant-id="' + v.id + '" data-variant-name="' + esc(v.name) + '" data-strategy-name="' + esc(s.name) + '">' +
-          '<span class="text-slate-600 cursor-grab">⠿</span>' +
-          '<a href="#/variant/' + v.id + '" class="flex-1 text-slate-300 hover:text-white truncate" title="' + esc(v.name) + '">' + esc(v.name) + '</a>' +
-          statusBadge(v.status) +
+        var statusDot = v.status === 'active' ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' : '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span>';
+        html += '<div class="sidebar-variant group px-3 py-2.5 text-xs" draggable="true" data-variant-id="' + v.id + '" data-variant-name="' + esc(v.name) + '" data-strategy-name="' + esc(s.name) + '">' +
+          '<div class="flex items-center gap-2.5">' +
+            '<span class="text-slate-500 cursor-grab group-active:cursor-grabbing transition opacity-0 group-hover:opacity-100">⠿</span>' +
+            '<div class="flex items-center gap-2 flex-1 min-w-0">' +
+              statusDot +
+              '<a href="#/variant/' + v.id + '" class="flex-1 text-slate-300 hover:text-white truncate font-medium transition" title="' + esc(v.name) + '">' + esc(v.name) + '</a>' +
+            '</div>' +
+            '<span class="status-' + esc(v.status) + ' text-xs font-semibold px-2 py-1 rounded-md whitespace-nowrap flex-shrink-0">' + esc(v.status) + '</span>' +
+          '</div>' +
         '</div>';
       });
     }
@@ -926,7 +932,14 @@ function setupTheme() {
 
 function setupSidebar() {
   document.getElementById('btn-toggle-sidebar').addEventListener('click', function() {
-    document.getElementById('sidebar').classList.toggle('collapsed');
+    var sidebar = document.getElementById('sidebar');
+    var isCollapsed = sidebar.classList.toggle('collapsed');
+    if (isCollapsed) {
+      sidebar._savedWidth = sidebar.style.width || '';
+      sidebar.style.width = '';
+    } else {
+      if (sidebar._savedWidth) sidebar.style.width = sidebar._savedWidth;
+    }
   });
   document.getElementById('btn-new-strat-sidebar').addEventListener('click', function() {
     showNewStrategyModal();

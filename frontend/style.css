@@ -91,7 +91,7 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 
 /* Sidebar */
 .sidebar { width: 280px; min-width: 160px; max-width: 520px; transition: width 0.2s ease, opacity 0.2s ease; }
-.sidebar.collapsed { width: 0; overflow: hidden; opacity: 0; padding: 0; }
+.sidebar.collapsed { width: 0; min-width: 0; overflow: hidden; opacity: 0; padding: 0; }
 .sidebar.resizing { transition: none; }
 
 /* Sidebar resize handle */
@@ -123,8 +123,17 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 .variant-list { overflow: hidden; transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1); max-height: 0; }
 
 /* Sidebar variant item — draggable */
-.sidebar-variant { cursor: grab; user-select: none; transition: background 0.1s; border-radius: 6px; }
-.sidebar-variant:hover { background: rgba(59,130,246,0.1); }
+.sidebar-variant {
+  cursor: grab;
+  user-select: none;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 8px;
+  position: relative;
+}
+.sidebar-variant:hover {
+  background: rgba(59,130,246,0.15);
+  box-shadow: 0 0 0 1px rgba(59,130,246,0.3);
+}
 .sidebar-variant:active { cursor: grabbing; }
 .sidebar-variant.dragging { opacity: 0.5; }
 
@@ -317,7 +326,11 @@ html.light .strat-toggle:hover { background: rgba(0,0,0,.05) !important; }
 html.light .strat-toggle .chevron { color: #a1a1a6 !important; }
 html.light .strat-toggle:hover .chevron,
 html.light .strat-toggle.open .chevron { color: #3a3a3c !important; }
-html.light .sidebar-variant:hover { background: rgba(0,113,227,.08) !important; }
+html.light .sidebar-variant:hover {
+  background: rgba(5,145,224,.12) !important;
+  box-shadow: 0 0 0 1px rgba(5,145,224,.25) !important;
+}
+html.light .sidebar-variant { border-radius: 8px; }
 
 /* ── Status badges ────────────────────────────────────────── */
 html.light .status-active   { background: rgba(52,199,89,.12);   color: #1a8a00;  border-color: rgba(52,199,89,.32); }
