@@ -896,6 +896,34 @@ function renderSidebar() {
   });
 }
 
+function setupTheme() {
+  var root = document.documentElement;
+  var btn = document.getElementById('btn-theme-toggle');
+
+  function applyTheme(theme) {
+    if (theme === 'light') {
+      root.classList.add('light');
+      btn.title = 'Passer en mode sombre';
+      document.getElementById('icon-sun').classList.add('hidden');
+      document.getElementById('icon-moon').classList.remove('hidden');
+    } else {
+      root.classList.remove('light');
+      btn.title = 'Passer en mode clair';
+      document.getElementById('icon-sun').classList.remove('hidden');
+      document.getElementById('icon-moon').classList.add('hidden');
+    }
+  }
+
+  var stored = localStorage.getItem('theme') || 'dark';
+  applyTheme(stored);
+
+  btn.addEventListener('click', function() {
+    var next = root.classList.contains('light') ? 'dark' : 'light';
+    applyTheme(next);
+    localStorage.setItem('theme', next);
+  });
+}
+
 function setupSidebar() {
   document.getElementById('btn-toggle-sidebar').addEventListener('click', function() {
     document.getElementById('sidebar').classList.toggle('collapsed');
@@ -991,6 +1019,7 @@ async function route() {
 
 window.addEventListener('hashchange', route);
 window.addEventListener('DOMContentLoaded', function() {
+  setupTheme();
   setupSidebar();
   loadSidebar();
   initUnitSystem();
