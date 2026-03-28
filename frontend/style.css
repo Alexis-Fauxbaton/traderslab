@@ -143,6 +143,16 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 .fade-in { animation: fadeIn 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
+/* Page slide transitions (macOS-style) */
+@keyframes pageEnterRight { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes pageEnterLeft  { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes pageExitLeft   { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(-18px); } }
+@keyframes pageExitRight  { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(18px); } }
+.page-enter-right { animation: pageEnterRight 0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+.page-enter-left  { animation: pageEnterLeft  0.24s cubic-bezier(0.25, 0.46, 0.45, 0.94) both; }
+.page-exit-left   { animation: pageExitLeft   0.14s cubic-bezier(0.55, 0.09, 0.68, 0.53) both; pointer-events: none; }
+.page-exit-right  { animation: pageExitRight  0.14s cubic-bezier(0.55, 0.09, 0.68, 0.53) both; pointer-events: none; }
+
 .metric-card { transition: transform 0.18s cubic-bezier(0.4,0,0.2,1), box-shadow 0.18s; }
 .metric-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
 

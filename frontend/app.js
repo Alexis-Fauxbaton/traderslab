@@ -991,6 +991,17 @@ function showNewStrategyModal() {
 // ===== ROUTER =====
 
 var APP = document.getElementById('app');
+var _prevHash = null;
+
+function getPageDepth(hash) {
+  if (!hash || hash === '/') return 0;
+  if (hash.match(/^\/strategy\//)) return 1;
+  if (hash === '/compare') return 1;
+  if (hash.match(/^\/import\//)) return 2;
+  if (hash.match(/^\/variant\//)) return 2;
+  if (hash.match(/^\/run\//)) return 3;
+  return 1;
+}
 
 function saveLastVisit(hash, crumbs) {
   try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now(), crumbs: crumbs || null })); } catch(e) {}
@@ -998,22 +1009,45 @@ function saveLastVisit(hash, crumbs) {
 
 async function route() {
   var hash = location.hash.slice(1) || '/';
-  // Sauvegarde minimale au moment du routage (sans les noms — enrichie ensuite depuis chaque page)
   if (hash !== '/') {
     try { localStorage.setItem('lastVisit', JSON.stringify({ hash: hash, ts: Date.now(), crumbs: null })); } catch(e) {}
   }
-  APP.innerHTML = spinner();
+
+  // Direction : profondeur croissante = forward (slide from right), décroissante = back
+  var dir = (_prevHash !== null && getPageDepth(hash) < getPageDepth(_prevHash)) ? 'back' : 'forward';
+
+  // Animate out
+  if (_prevHash !== null) {
+    var outEl = APP.firstElementChild;
+    if (outEl) {
+      outEl.style.pointerEvents = 'none';
+      outEl.classList.add(dir === 'forward' ? 'page-exit-left' : 'page-exit-right');
+      await new Promise(function(r) { setTimeout(r, 130); });
+    }
+  }
+  _prevHash = hash;
+  APP.innerHTML = '';
+
   try {
     var m;
-    if (hash === '/') return await pageDashboard();
-    if ((m = hash.match(/^\/strategy\/(.+)$/))) return await pageStrategy(m[1]);
-    if ((m = hash.match(/^\/variant\/(.+)$/))) return await pageVariant(m[1]);
-    if ((m = hash.match(/^\/run\/(.+)$/))) return await pageRun(m[1]);
-    if ((m = hash.match(/^\/import\/(.+)$/))) return await pageImport(m[1]);
-    if (hash === '/compare') return await pageCompare();
-    APP.innerHTML = '<p class="text-center mt-20 text-slate-400">Page introuvable</p>';
+    if (hash === '/') await pageDashboard();
+    else if ((m = hash.match(/^\/strategy\/(.+)$/))) await pageStrategy(m[1]);
+    else if ((m = hash.match(/^\/variant\/(.+)$/))) await pageVariant(m[1]);
+    else if ((m = hash.match(/^\/run\/(.+)$/))) await pageRun(m[1]);
+    else if ((m = hash.match(/^\/import\/(.+)$/))) await pageImport(m[1]);
+    else if (hash === '/compare') await pageCompare();
+    else { APP.innerHTML = '<p class="text-center mt-20 text-slate-400">Page introuvable</p>'; return; }
   } catch (err) {
     APP.innerHTML = '<div class="text-center mt-20"><p class="text-red-400 text-lg">Erreur</p><p class="text-slate-400 mt-2">' + esc(err.message) + '</p></div>';
+    return;
+  }
+
+  // Animate in
+  var inEl = APP.firstElementChild;
+  if (inEl) {
+    inEl.classList.remove('fade-in');
+    void inEl.offsetWidth; // force reflow
+    inEl.classList.add(dir === 'forward' ? 'page-enter-right' : 'page-enter-left');
   }
 }
 
