@@ -12,7 +12,7 @@ build/
 venv/
 
 # uv
-.python-version
+# .python-version
 
 # Base de données SQLite
 *.db

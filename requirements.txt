@@ -1,8 +1,6 @@
 # Fichier requirements.txt pour traderslab
 # Ajoutez ici vos dépendances Python
 
-# Spécification de la version de Python pour Render
-python_version == 3.12.1
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
