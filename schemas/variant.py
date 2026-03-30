@@ -4,10 +4,14 @@ from enum import Enum
 
 
 class VariantStatus(str, Enum):
-    active = "active"
+    idea = "idea"
+    ready_to_test = "ready_to_test"
     testing = "testing"
+    active = "active"
+    validated = "validated"
+    rejected = "rejected"
     archived = "archived"
-    abandoned = "abandoned"
+    abandoned = "abandoned"  # rétrocompat
 
 
 class VariantCreate(BaseModel):
@@ -19,7 +23,8 @@ class VariantCreate(BaseModel):
     changes: str = ""
     change_reason: str = ""
     decision: str = ""
-    status: VariantStatus = VariantStatus.active
+    key_change: str = ""
+    status: VariantStatus = VariantStatus.idea
 
 
 class VariantUpdate(BaseModel):
@@ -29,6 +34,7 @@ class VariantUpdate(BaseModel):
     changes: str | None = None
     change_reason: str | None = None
     decision: str | None = None
+    key_change: str | None = None
     status: VariantStatus | None = None
 
 
@@ -42,6 +48,7 @@ class VariantOut(BaseModel):
     changes: str
     change_reason: str
     decision: str
+    key_change: str
     status: str
     created_at: datetime
 

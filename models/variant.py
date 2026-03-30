@@ -17,5 +17,6 @@ class Variant(Base):
     changes = Column(String, default="")
     change_reason = Column(String, default="")
     decision = Column(String, default="")
-    status = Column(String, default="active")  # active | testing | archived | abandoned
+    key_change = Column(String, default="")  # une ligne : le delta principal de cette itération
+    status = Column(String, default="idea")  # idea | ready_to_test | testing | active | validated | rejected | archived | abandoned
     created_at = Column(DateTime, default=datetime.utcnow)

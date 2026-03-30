@@ -90,8 +90,17 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 .select-ghost option { background: #1c2333; }
 
 /* Sidebar */
-.sidebar { width: 280px; min-width: 160px; max-width: 520px; transition: width 0.2s ease, opacity 0.2s ease; }
+.sidebar { width: 280px; min-width: 160px; max-width: 520px; transition: width 0.2s ease, opacity 0.2s ease; display: flex; flex-direction: column; }
+.sidebar > .p-3 { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#sidebar-tree { display: flex; flex-direction: column; flex: 1; }
 .sidebar.collapsed { width: 0; min-width: 0; overflow: hidden; opacity: 0; padding: 0; }
+/* Body fixé à la hauteur du viewport — empêche la scrollbar body */
+body { height: 100vh; overflow: hidden; }
+/* #app doit avoir min-height:0 pour rester dans ses limites flex et scroller en interne */
+#app { overflow-y: scroll; min-height: 0; }
+.inline-rich-editor { border: 1px solid #3b82f6; border-radius: 6px; overflow: hidden; background: #1e293b; margin-top: 2px; }
+.inline-rich-toolbar { border-radius: 6px 6px 0 0; }
+.inline-rich-content { min-height: 60px; max-height: 240px; overflow-y: auto; padding: 8px 10px; font-size: 0.875rem; color: #e2e8f0; outline: none; }
 .sidebar.resizing { transition: none; }
 
 /* Sidebar resize handle */
@@ -136,6 +145,24 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 }
 .sidebar-variant:active { cursor: grabbing; }
 .sidebar-variant.dragging { opacity: 0.5; }
+.strat-dnd-item.dnd-over > .strat-toggle {
+  border-top: 2px solid rgba(99, 102, 241, 0.7);
+  margin-top: -2px;
+}
+.strat-dnd-bottom {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 6px;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+.strat-dnd-bottom.dnd-over {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1.5px dashed rgba(99, 102, 241, 0.5);
+}
+.strat-dnd-item { cursor: grab; }
+.strat-dnd-item:active { cursor: grabbing; }
+.strat-dnd-item a { cursor: pointer; }
 
 /* Drop zone for compare */
 .drop-zone { border: 2px dashed #475569; transition: all 0.2s; }
@@ -144,10 +171,14 @@ body { transition: background-color 0.28s ease, color 0.2s ease; }
 .compare-drop.drag-over { border-color: #3b82f6; background: rgba(59,130,246,0.08); }
 .compare-drop.has-variant { border-style: solid; border-color: #334155; }
 
-.status-active   { background: rgba(46,160,67,0.15);  color: #3fb950; border: 1px solid rgba(46,160,67,0.3); }
-.status-testing  { background: rgba(210,153,34,0.15);  color: #d29922; border: 1px solid rgba(210,153,34,0.3); }
-.status-archived { background: rgba(139,148,158,0.12); color: #8b949e; border: 1px solid rgba(139,148,158,0.2); }
-.status-abandoned{ background: rgba(248,81,73,0.12);   color: #f85149; border: 1px solid rgba(248,81,73,0.25); }
+.status-active        { background: rgba(46,160,67,0.15);   color: #3fb950; border: 1px solid rgba(46,160,67,0.3); }
+.status-idea          { background: rgba(139,92,246,0.15);  color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+.status-ready_to_test { background: rgba(59,130,246,0.15);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+.status-testing       { background: rgba(210,153,34,0.15);  color: #d29922; border: 1px solid rgba(210,153,34,0.3); }
+.status-validated     { background: rgba(20,184,166,0.15);  color: #2dd4bf; border: 1px solid rgba(20,184,166,0.3); }
+.status-rejected      { background: rgba(248,81,73,0.12);   color: #f85149; border: 1px solid rgba(248,81,73,0.25); }
+.status-archived      { background: rgba(139,148,158,0.12); color: #8b949e; border: 1px solid rgba(139,148,158,0.2); }
+.status-abandoned     { background: rgba(248,81,73,0.08);   color: #c04040; border: 1px solid rgba(248,81,73,0.18); }
 
 .fade-in { animation: fadeIn 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -333,10 +364,14 @@ html.light .sidebar-variant:hover {
 html.light .sidebar-variant { border-radius: 8px; }
 
 /* ── Status badges ────────────────────────────────────────── */
-html.light .status-active   { background: rgba(52,199,89,.12);   color: #1a8a00;  border-color: rgba(52,199,89,.32); }
-html.light .status-testing  { background: rgba(255,159,10,.10);   color: #b86e00;  border-color: rgba(255,159,10,.28); }
-html.light .status-archived { background: rgba(142,142,147,.10);  color: #6e6e73;  border-color: rgba(142,142,147,.22); }
-html.light .status-abandoned{ background: rgba(255,59,48,.09);    color: #d70015;  border-color: rgba(255,59,48,.28); }
+html.light .status-active        { background: rgba(52,199,89,.12);    color: #1a8a00;  border-color: rgba(52,199,89,.32); }
+html.light .status-idea          { background: rgba(139,92,246,.10);   color: #6d28d9;  border-color: rgba(139,92,246,.28); }
+html.light .status-ready_to_test { background: rgba(59,130,246,.10);   color: #1d4ed8;  border-color: rgba(59,130,246,.28); }
+html.light .status-testing       { background: rgba(255,159,10,.10);   color: #b86e00;  border-color: rgba(255,159,10,.28); }
+html.light .status-validated     { background: rgba(20,184,166,.10);   color: #0f766e;  border-color: rgba(20,184,166,.28); }
+html.light .status-rejected      { background: rgba(255,59,48,.09);    color: #d70015;  border-color: rgba(255,59,48,.28); }
+html.light .status-archived      { background: rgba(142,142,147,.10);  color: #6e6e73;  border-color: rgba(142,142,147,.22); }
+html.light .status-abandoned     { background: rgba(255,59,48,.06);    color: #9a2020;  border-color: rgba(255,59,48,.18); }
 
 /* ── Modal ────────────────────────────────────────────────── */
 html.light #modal-overlay { background: rgba(0,0,0,.32) !important; }

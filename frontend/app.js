@@ -424,8 +424,20 @@ function formatPercent(n) {
   return (n * 100).toFixed(1) + '%';
 }
 
+var STATUS_LABELS = {
+  idea:          'Idée',
+  ready_to_test: 'Prêt à tester',
+  testing:       'En test',
+  active:        'Active',
+  validated:     'Validée',
+  rejected:      'Rejetée',
+  archived:      'Archivée',
+  abandoned:     'Abandonnée',
+};
+
 function statusBadge(status) {
-  return '<span class="status-' + esc(status) + ' text-xs font-medium px-2.5 py-0.5 rounded-full">' + esc(status) + '</span>';
+  var label = STATUS_LABELS[status] || status;
+  return '<span class="status-' + esc(status) + ' text-xs font-medium px-2.5 py-0.5 rounded-full">' + esc(label) + '</span>';
 }
 
 function breadcrumb(items) {
@@ -459,13 +471,13 @@ function showModal(title, bodyHtml, onSubmit, options) {
   } else {
     content.className = 'bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto';
   }
+  var footer = options.customFooter ||
+    '<div class="flex justify-end gap-3 mt-6">' +
+      '<button type="button" id="modal-cancel" class="px-4 py-2 text-sm text-slate-300 hover:text-white transition">Annuler</button>' +
+      '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Confirmer</button>' +
+    '</div>';
   content.innerHTML = '<h3 class="text-lg font-semibold text-white mb-4">' + esc(title) + '</h3>' +
-    '<form id="modal-form">' + bodyHtml +
-      '<div class="flex justify-end gap-3 mt-6">' +
-        '<button type="button" id="modal-cancel" class="px-4 py-2 text-sm text-slate-300 hover:text-white transition">Annuler</button>' +
-        '<button type="submit" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Confirmer</button>' +
-      '</div>' +
-    '</form>';
+    '<form id="modal-form">' + bodyHtml + footer + '</form>';
   overlay.classList.remove('hidden');
   overlay.classList.add('flex');
   document.getElementById('modal-cancel').onclick = closeModal;
@@ -475,9 +487,14 @@ function showModal(title, bodyHtml, onSubmit, options) {
     setTimeout(function() { initRichEditors(); }, 50);
   }
 
+  var _lastSubmitBtn = null;
+  content.querySelectorAll('button[type="submit"]').forEach(function(btn) {
+    btn.addEventListener('click', function() { _lastSubmitBtn = btn; });
+  });
+
   document.getElementById('modal-form').onsubmit = async function(e) {
     e.preventDefault();
-    try { await onSubmit(new FormData(e.target)); closeModal(); }
+    try { await onSubmit(new FormData(e.target), _lastSubmitBtn); closeModal(); }
     catch (err) { alert(err.message); }
   };
 }
@@ -490,11 +507,12 @@ function closeModal() {
   content.className = 'bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto';
 }
 
-function inputField(name, label, type, required, value) {
+function inputField(name, label, type, required, value, placeholder) {
   type = type || 'text'; required = required !== false; value = value || '';
   return '<div class="mb-3"><label class="block text-sm text-slate-300 mb-1">' + esc(label) + '</label>' +
     '<input name="' + name + '" type="' + type + '" value="' + esc(value) + '" ' + (required ? 'required' : '') +
-    ' class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"></div>';
+    (placeholder ? ' placeholder="' + esc(placeholder) + '"' : '') +
+    ' class="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none placeholder:text-slate-500"></div>';
 }
 
 function textareaField(name, label, required, value) {
@@ -816,6 +834,24 @@ function selectField(name, label, options, selected) {
 
 var _sidebarData = [];
 var _expandedStrategies = {};
+var _STRAT_ORDER_KEY = 'strategyOrder';
+
+function getSavedStrategyOrder() {
+  try { return JSON.parse(localStorage.getItem(_STRAT_ORDER_KEY)) || []; } catch(e) { return []; }
+}
+function saveStrategyOrder(ids) {
+  try { localStorage.setItem(_STRAT_ORDER_KEY, JSON.stringify(ids)); } catch(e) {}
+}
+function sortSidebarData() {
+  var order = getSavedStrategyOrder();
+  if (!order.length) return;
+  _sidebarData.sort(function(a, b) {
+    var ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+    if (ia === -1) ia = 9999;
+    if (ib === -1) ib = 9999;
+    return ia - ib;
+  });
+}
 
 async function loadSidebar() {
   var tree = document.getElementById('sidebar-tree');
@@ -826,6 +862,7 @@ async function loadSidebar() {
       var detail = await API.get('/strategies/' + strategies[i].id);
       _sidebarData.push(detail);
     }
+    sortSidebarData();
     renderSidebar();
   } catch (err) {
     tree.innerHTML = '<div class="text-xs text-red-400 py-2 text-center">Erreur chargement</div>';
@@ -843,17 +880,24 @@ function renderSidebar() {
   _sidebarData.forEach(function(s) {
     var isOpen = _expandedStrategies[s.id];
     var varCount = s.variants ? s.variants.length : 0;
-    html += '<div class="mb-1">' +
+    html += '<div class="mb-1 strat-dnd-item" draggable="true" data-strat-id="' + s.id + '">' +
       '<div class="strat-toggle ' + (isOpen ? 'open' : '') + ' flex items-center gap-2 px-2 py-1.5 rounded-md text-sm" data-strat-id="' + s.id + '">' +
+        '<span class="text-slate-600 cursor-grab hover:text-slate-400 transition select-none text-base leading-none">⠿</span>' +
         '<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.5l4 3.5-4 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-        '<a href="#/strategy/' + s.id + '" class="flex-1 text-slate-200 hover:text-white truncate font-medium" title="' + esc(s.name) + '">' + esc(s.name) + '</a>' +
+        '<a href="#/strategy/' + s.id + '" class="flex-1 text-slate-200 hover:text-white truncate font-medium" draggable="false" title="' + esc(s.name) + '">' + esc(s.name) + '</a>' +
         '<span class="text-xs text-slate-500">' + varCount + '</span>' +
       '</div>';
 
     html += '<div class="variant-list pl-5" style="max-height:' + (isOpen ? (varCount * 40 + 10) + 'px' : '0') + '">';
     if (s.variants) {
       s.variants.forEach(function(v) {
-        var statusDot = v.status === 'active' ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' : '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span>';
+        var statusDot = v.status === 'active' || v.status === 'validated'
+          ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400"></span>'
+          : v.status === 'testing' || v.status === 'ready_to_test'
+            ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400"></span>'
+            : v.status === 'rejected'
+              ? '<span class="inline-block w-1.5 h-1.5 rounded-full bg-red-400"></span>'
+              : '<span class="inline-block w-1.5 h-1.5 rounded-full bg-slate-500"></span>';
         html += '<div class="sidebar-variant group px-3 py-2.5 text-xs" draggable="true" data-variant-id="' + v.id + '" data-variant-name="' + esc(v.name) + '" data-strategy-name="' + esc(s.name) + '">' +
           '<div class="flex items-center gap-2.5">' +
             '<span class="text-slate-500 cursor-grab group-active:cursor-grabbing transition opacity-0 group-hover:opacity-100">⠿</span>' +
@@ -861,7 +905,7 @@ function renderSidebar() {
               statusDot +
               '<a href="#/variant/' + v.id + '" class="flex-1 text-slate-300 hover:text-white truncate font-medium transition" title="' + esc(v.name) + '">' + esc(v.name) + '</a>' +
             '</div>' +
-            '<span class="status-' + esc(v.status) + ' text-xs font-semibold px-2 py-1 rounded-md whitespace-nowrap flex-shrink-0">' + esc(v.status) + '</span>' +
+            '<span class="status-' + esc(v.status) + ' text-xs font-semibold px-2 py-1 rounded-md whitespace-nowrap flex-shrink-0">' + esc(STATUS_LABELS[v.status] || v.status) + '</span>' +
           '</div>' +
         '</div>';
       });
@@ -884,7 +928,7 @@ function renderSidebar() {
     });
   });
 
-  // Bind drag start on variants
+  // Bind drag start on variants (pour comparaison)
   tree.querySelectorAll('.sidebar-variant[draggable]').forEach(function(el) {
     el.addEventListener('dragstart', function(e) {
       var variantId = el.getAttribute('data-variant-id');
@@ -899,6 +943,82 @@ function renderSidebar() {
     el.addEventListener('dragend', function() {
       el.classList.remove('dragging');
     });
+  });
+
+  // Drag & drop reorder strategies — délégation sur le conteneur + zone bas
+  var _dragSrcStratId = null;
+
+  // Ajouter zone de drop en bas de la liste
+  var bottomZone = document.createElement('div');
+  bottomZone.id = 'strat-dnd-bottom';
+  bottomZone.className = 'strat-dnd-bottom';
+  tree.appendChild(bottomZone);
+
+  // dragstart sur chaque item strat
+  tree.querySelectorAll('.strat-dnd-item').forEach(function(el) {
+    el.addEventListener('dragstart', function(e) {
+      _dragSrcStratId = el.getAttribute('data-strat-id');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', _dragSrcStratId);
+      // Afficher uniquement la ligne de la strat dans le fantôme de drag
+      var toggle = el.querySelector('.strat-toggle');
+      if (toggle) e.dataTransfer.setDragImage(toggle, Math.min(120, toggle.offsetWidth / 2), toggle.offsetHeight / 2);
+      setTimeout(function() { el.style.opacity = '0.4'; }, 0);
+    });
+    el.addEventListener('dragend', function() {
+      el.style.opacity = '';
+      tree.querySelectorAll('.strat-dnd-item').forEach(function(i) { i.classList.remove('dnd-over'); });
+      bottomZone.classList.remove('dnd-over');
+      _dragSrcStratId = null;
+    });
+  });
+
+  // Délégation dragover/drop sur tout le tree
+  tree.addEventListener('dragover', function(e) {
+    if (!_dragSrcStratId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Trouver le .strat-dnd-item le plus proche
+    var target = e.target;
+    while (target && target !== tree && !target.classList.contains('strat-dnd-item')) {
+      target = target.parentElement;
+    }
+    tree.querySelectorAll('.strat-dnd-item').forEach(function(i) { i.classList.remove('dnd-over'); });
+    bottomZone.classList.remove('dnd-over');
+    if (target && target.classList.contains('strat-dnd-item') && target.getAttribute('data-strat-id') !== _dragSrcStratId) {
+      target.classList.add('dnd-over');
+    } else if (!target || target === tree) {
+      bottomZone.classList.add('dnd-over');
+    }
+  });
+
+  tree.addEventListener('dragleave', function(e) {
+    if (!e.relatedTarget || !tree.contains(e.relatedTarget)) {
+      tree.querySelectorAll('.strat-dnd-item').forEach(function(i) { i.classList.remove('dnd-over'); });
+      bottomZone.classList.remove('dnd-over');
+    }
+  });
+
+  tree.addEventListener('drop', function(e) {
+    if (!_dragSrcStratId) return;
+    e.preventDefault();
+    var target = e.target;
+    while (target && target !== tree && !target.classList.contains('strat-dnd-item')) {
+      target = target.parentElement;
+    }
+    var srcIdx = _sidebarData.findIndex(function(s) { return String(s.id) === String(_dragSrcStratId); });
+    if (srcIdx === -1) return;
+    var moved = _sidebarData.splice(srcIdx, 1)[0];
+    if (target && target.classList.contains('strat-dnd-item') && target.getAttribute('data-strat-id') !== String(moved.id)) {
+      var tgtIdx = _sidebarData.findIndex(function(s) { return String(s.id) === target.getAttribute('data-strat-id'); });
+      if (tgtIdx !== -1) _sidebarData.splice(tgtIdx, 0, moved);
+      else _sidebarData.push(moved);
+    } else {
+      // Zone bas ou zone vide → mettre en dernier
+      _sidebarData.push(moved);
+    }
+    saveStrategyOrder(_sidebarData.map(function(s) { return s.id; }));
+    renderSidebar();
   });
 }
 
@@ -991,12 +1111,20 @@ function showNewStrategyModal() {
       {value:'D1',label:'D1'},{value:'W1',label:'W1'}
     ], 'M15'),
     async function(fd) {
-      await API.post('/strategies', {
+      var strat = await API.post('/strategies', {
         name: fd.get('name'), description: fd.get('description'),
         market: fd.get('market'), timeframe: fd.get('timeframe'),
       });
+      // Créer silencieusement la première itération : NomStratégie V1
+      var v = await API.post('/variants', {
+        strategy_id: strat.id,
+        name: strat.name + ' V1',
+        status: 'active',
+        key_change: '',
+      });
       await loadSidebar();
-      route();
+      // Aller directement à l'import pour fluidifier le démarrage
+      location.hash = '#/import/' + v.id;
     }
   );
 }
@@ -1211,8 +1339,8 @@ async function pageDashboard() {
       return '<p class="text-slate-500 text-xs text-green-400/70">Tout est à jour ✓</p>';
     var badgeCount = activity.to_review.length;
     var rows = activity.to_review.map(function(v) {
-      var badgeClass = v.status === 'testing' ? 'text-yellow-400' : 'text-blue-400';
-      var badge = '<span class="' + badgeClass + '">' + esc(v.status) + '</span>';
+      var badgeClass = v.status === 'testing' || v.status === 'ready_to_test' ? 'text-yellow-400' : v.status === 'idea' ? 'text-purple-400' : 'text-blue-400';
+      var badge = '<span class="' + badgeClass + '">' + esc(STATUS_LABELS[v.status] || v.status) + '</span>';
       return rowLink('#/variant/' + v.id, v.name, v.strategy_name, badge);
     }).join('');
     return rows;
@@ -1363,7 +1491,13 @@ function renderStrategyGraph(containerId, variants, varMetrics) {
     }
 
     // Status indicator
-    var statusEmoji = v.status === 'active' ? '🟢 ' : v.status === 'paused' ? '🟡 ' : v.status === 'archived' ? '⚪ ' : '';
+    var statusEmoji = v.status === 'active' ? '🟢 '
+      : v.status === 'validated'    ? '✅ '
+      : v.status === 'testing'      ? '🟡 '
+      : v.status === 'ready_to_test'? '🔵 '
+      : v.status === 'idea'         ? '💡 '
+      : v.status === 'rejected'     ? '🔴 '
+      : v.status === 'archived'     ? '⚪ ' : '';
 
     nodes.push({
       id: v.id,
@@ -1472,35 +1606,66 @@ async function pageStrategy(id) {
         '</div>' +
       '</div>' +
     '</div>' +
+    (function() {
+      var activeVar = data.variants.find(function(v) { return v.status === 'active'; });
+      var lastVar = data.variants.length > 0 ? data.variants[0] : null; // déjà trié par date desc
+      if (!activeVar && !lastVar) return '';
+      var importTarget = activeVar || lastVar; // import dispo même si pas de variante "active"
+      if (!importTarget && !lastVar) return '';
+      var activeHtml = activeVar
+        ? '<div class="flex items-center gap-2"><span class="text-xs text-slate-500">Version active</span><a href="#/variant/' + activeVar.id + '" class="text-sm font-medium text-white hover:text-blue-400 transition">' + esc(activeVar.name) + '</a>' + statusBadge(activeVar.status) + '</div>'
+        : '<div class="flex items-center gap-2"><span class="text-xs text-slate-500">Version active</span><span class="text-sm text-slate-500 italic">aucune</span></div>';
+      var lastHtml = (lastVar && (!activeVar || lastVar.id !== activeVar.id))
+        ? '<div class="flex items-center gap-2 mt-1"><span class="text-xs text-slate-500">Dernière itération</span><a href="#/variant/' + lastVar.id + '" class="text-sm text-slate-300 hover:text-white transition">' + esc(lastVar.name) + '</a>' + statusBadge(lastVar.status) + '</div>'
+        : '';
+      return '<div class="bg-slate-800/60 border border-slate-700/60 rounded-xl px-5 py-4 mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-4">' +
+        '<div>' + activeHtml + lastHtml + '</div>' +
+        '<div class="flex flex-wrap gap-2">' +
+          '<button id="btn-new-var-quick" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">+ Tester une modification</button>' +
+          (importTarget ? '<a href="#/import/' + importTarget.id + '" class="text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">📥 Importer un run</a>' : '') +
+          (activeVar && lastVar && lastVar.id !== activeVar.id
+            ? '<button id="btn-compare-quick" class="text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">⚖ Comparer active vs dernier test</button>'
+            : '') +
+        '</div>' +
+      '</div>';
+    })() +
     '<div class="flex items-center justify-between mb-4">' +
-      '<h2 class="text-lg font-semibold text-white">Variantes (' + data.variants.length + ')</h2>' +
+      '<h2 class="text-base font-semibold text-slate-400">Historique des itérations (' + data.variants.length + ')</h2>' +
       '<div class="flex gap-2">' +
         '<button id="btn-view-grid" class="text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white">Grille</button>' +
-        '<button id="btn-view-tree" class="text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white">Arborescence</button>' +
-        '<button id="btn-new-var" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Variante</button>' +
+        (data.variants.length >= 2 ? '<button id="btn-view-tree" class="text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white">Arborescence</button>' : '') +
+        '<button id="btn-new-var" class="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">+ Nouvelle itération</button>' +
       '</div>' +
     '</div>' +
     '<div id="variants-grid">' +
-    (data.variants.length === 0 ? emptyState('Aucune variante créée') :
+    (data.variants.length === 0
+      ? '<div class="text-center py-16 bg-slate-800/40 border border-dashed border-slate-700 rounded-xl">' +
+          '<div class="text-5xl mb-4">📥</div>' +
+          '<h3 class="text-base font-semibold text-white mb-2">Importez vos premiers résultats</h3>' +
+          '<p class="text-sm text-slate-400 mb-6">Créez une itération et importez vos trades pour commencer à analyser cette stratégie.</p>' +
+          '<button id="btn-first-import" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition">📥 Créer et importer un run</button>' +
+        '</div>'
+    :
     '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">' +
       data.variants.map(function(v, idx) {
         var m = varMetrics[v.id];
         var hasMet = m && m.total_trades > 0;
         _currentAvgLoss = hasMet ? m.avg_loss : null;
         var rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
-        var desc = richTextPlain(v.description, 120);
+        var desc = richTextPlain(v.description, 100);
         return '<a href="#/variant/' + v.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
           '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(v.name) + '</h3>' +
             statusBadge(v.status) +
           '</div>' +
-          '<p class="text-xs text-slate-400 mb-2">' + (esc(desc) || '<span class="italic">Pas de description</span>') + '</p>' +
+          (v.key_change ? '<div class="flex items-start gap-1.5 mb-2"><span class="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5 shrink-0">Δ</span><span class="text-xs text-blue-300/90 font-medium leading-snug">' + esc(v.key_change) + '</span></div>' : '') +
+          (desc ? '<p class="text-xs text-slate-500 mb-2 truncate">' + esc(desc) + '</p>' : '') +
           (hasMet ?
-            '<div style="height:60px" class="mb-2"><canvas id="var-chart-' + idx + '"></canvas></div>' +
+            '<div style="height:56px" class="mb-2"><canvas id="var-chart-' + idx + '"></canvas></div>' +
             '<div class="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">' +
               '<span>PnL ' + formatPnl(m.total_pnl) + '</span>' +
-              '<span>Profit Factor <span class="text-white">' + (m.profit_factor != null ? m.profit_factor.toFixed(2) : '—') + '</span></span>' +
-              '<span>RR Moyen <span class="text-white">' + (rr != null ? rr.toFixed(2) : '—') + '</span></span>' +
+              '<span>PF <span class="text-white">' + (m.profit_factor != null ? m.profit_factor.toFixed(2) : '—') + '</span></span>' +
+              '<span>RR <span class="text-white">' + (rr != null ? rr.toFixed(2) : '—') + '</span></span>' +
             '</div>'
           : '') +
           '<div class="flex items-center gap-3 text-xs text-slate-500">' +
@@ -1511,9 +1676,11 @@ async function pageStrategy(id) {
       }).join('') +
     '</div>') +
     '</div>' +
-    '<div id="variants-tree" class="hidden">' +
-      '<div id="strategy-graph" style="height:550px;border-radius:12px;overflow:hidden" class="bg-slate-800 border border-slate-700"></div>' +
-    '</div>' +
+    (data.variants.length >= 2
+      ? '<div id="variants-tree" class="hidden">' +
+          '<div id="strategy-graph" style="height:550px;border-radius:12px;overflow:hidden" class="bg-slate-800 border border-slate-700"></div>' +
+        '</div>'
+      : '') +
   '</div>';
 
   // Cleanup previous
@@ -1538,24 +1705,29 @@ async function pageStrategy(id) {
     _strategyCharts.push(chart);
   });
 
-  // View toggle: Grid / Tree
+  // View toggle: Grid / Tree (tree only shown if >= 2 variants)
   document.getElementById('btn-view-grid').onclick = function() {
     document.getElementById('variants-grid').classList.remove('hidden');
-    document.getElementById('variants-tree').classList.add('hidden');
+    var treeEl = document.getElementById('variants-tree');
+    if (treeEl) treeEl.classList.add('hidden');
     this.className = 'text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
-    document.getElementById('btn-view-tree').className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+    var treeBtn = document.getElementById('btn-view-tree');
+    if (treeBtn) treeBtn.className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
   };
-  document.getElementById('btn-view-tree').onclick = function() {
-    document.getElementById('variants-tree').classList.remove('hidden');
-    document.getElementById('variants-grid').classList.add('hidden');
-    this.className = 'text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
-    document.getElementById('btn-view-grid').className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
-    // Lazy-init the graph on first show
-    if (!_strategyNetwork) {
-      renderStrategyGraph('strategy-graph', data.variants, varMetrics);
-    }
-  };
+  var btnViewTree = document.getElementById('btn-view-tree');
+  if (btnViewTree) {
+    btnViewTree.onclick = function() {
+      document.getElementById('variants-tree').classList.remove('hidden');
+      document.getElementById('variants-grid').classList.add('hidden');
+      this.className = 'text-sm px-3 py-1.5 rounded-lg border transition bg-blue-600 border-blue-500 text-white';
+      document.getElementById('btn-view-grid').className = 'text-sm px-3 py-1.5 rounded-lg border transition border-slate-600 text-slate-400 hover:text-white';
+      if (!_strategyNetwork) {
+        renderStrategyGraph('strategy-graph', data.variants, varMetrics);
+      }
+    };
+  }
 
+  // ── Handlers stratégie ──────────────────────────────────────
   document.getElementById('btn-edit-strat').onclick = function() {
     showModal('Modifier la Stratégie',
       inputField('name', 'Nom', 'text', true, data.name) +
@@ -1585,38 +1757,119 @@ async function pageStrategy(id) {
     }
   };
 
-  document.getElementById('btn-new-var').onclick = function() {
-    var parentOpts = [{value:'', label:'— Aucun (variante racine) —'}]
-      .concat(data.variants.map(function(v) { return {value: v.id, label: v.name}; }));
-    showModal('Nouvelle Variante',
-      inputField('name', 'Nom') +
-      richTextField('description', 'Description') +
-      selectField('parent_variant_id', 'Variante parente', parentOpts) +
-      richTextField('hypothesis', 'Hypothèse testée') +
-      richTextField('changes', 'Ce qui change') +
-      richTextField('change_reason', 'Raison du changement') +
-      richTextField('decision', 'Conclusion après test') +
-      selectField('status', 'Statut', [
-        {value:'active',label:'Active'},{value:'testing',label:'Testing'},
-        {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
-      ]),
-      async function(fd) {
-        await API.post('/variants', {
-          strategy_id: id, name: fd.get('name'),
+  // Fonction partagée : ouvre le modal "Tester une modification"
+  function openNewIterationModal(defaultParentOverride) {
+    var activeVar = data.variants.find(function(v) { return v.status === 'active'; });
+    var defaultParentId = defaultParentOverride !== undefined ? defaultParentOverride : (activeVar ? activeVar.id : '');
+    // Auto-name : "Itération N"
+    var iterCount = data.variants.length + 1;
+    var autoName = 'Itération ' + iterCount;
+    var parentOpts = [{value:'', label:'— Aucune (racine) —'}]
+      .concat(data.variants.map(function(v) {
+        return {value: v.id, label: (STATUS_LABELS[v.status] ? '[' + STATUS_LABELS[v.status] + '] ' : '') + v.name};
+      }));
+    var statusOpts = [
+      {value:'idea',label:'Idée'},{value:'ready_to_test',label:'Prêt à tester'},
+      {value:'testing',label:'En test'},{value:'active',label:'Active'},
+      {value:'validated',label:'Validée'},{value:'rejected',label:'Rejetée'},
+      {value:'archived',label:'Archivée'}
+    ];
+    var advancedHtml =
+      '<div class="mt-4 pt-3 border-t border-slate-700/60">' +
+        '<button type="button" id="btn-advanced-toggle" class="text-xs text-slate-500 hover:text-slate-300 transition flex items-center gap-1.5 mb-3">' +
+          '<span id="advanced-arrow" class="text-[10px]">▶</span> Options avancées' +
+        '</button>' +
+        '<div id="advanced-fields" class="hidden space-y-0">' +
+          richTextField('description', 'Description') +
+          richTextField('hypothesis', 'Hypothèse détaillée') +
+          richTextField('changes', 'Changements techniques') +
+          richTextField('decision', 'Conclusion après test') +
+          selectField('parent_variant_id', 'Variante de base' + (activeVar ? ' (auto : ' + esc(activeVar.name) + ')' : ''), parentOpts, defaultParentId) +
+          selectField('status', 'Statut', statusOpts, 'idea') +
+        '</div>' +
+      '</div>';
+
+    // Deux boutons de submit : Créer / Créer et importer
+    var customFooter =
+      '<div class="flex justify-end gap-3 mt-6">' +
+        '<button type="button" id="modal-cancel" class="px-4 py-2 text-sm text-slate-300 hover:text-white transition">Annuler</button>' +
+        '<button type="submit" name="_action" value="create" class="px-4 py-2 text-sm border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white rounded-lg transition">Créer</button>' +
+        '<button type="submit" name="_action" value="import" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Créer et importer un run →</button>' +
+      '</div>';
+
+    showModal('Tester une modification',
+      inputField('name', 'Nom de l\'itération', 'text', true, autoName) +
+      inputField('key_change', 'Changement clé', 'text', false, '', 'Ex : Entrée après close M15 au lieu de wick touch') +
+      textareaField('change_reason', 'Pourquoi tu le testes', false) +
+      advancedHtml,
+      async function(fd, submitBtn) {
+        var action = (submitBtn && submitBtn.value) || 'create';
+        var resp = await API.post('/variants', {
+          strategy_id: id,
+          name: fd.get('name'),
+          key_change: fd.get('key_change') || '',
+          change_reason: fd.get('change_reason') || '',
           description: getRichValue('description'),
           hypothesis: getRichValue('hypothesis'),
           changes: getRichValue('changes'),
-          change_reason: getRichValue('change_reason'),
           decision: getRichValue('decision'),
-          parent_variant_id: fd.get('parent_variant_id') || null,
-          status: fd.get('status'),
+          parent_variant_id: fd.get('parent_variant_id') || defaultParentId || null,
+          status: fd.get('status') || 'idea',
         });
         await loadSidebar();
-        route();
+        if (action === 'import' && resp && resp.id) {
+          location.hash = '#/import/' + resp.id;
+        } else {
+          route();
+        }
       },
-      { richText: true, wide: true }
+      { richText: true, wide: true, customFooter: customFooter }
     );
-  };
+    setTimeout(function() {
+      var toggle = document.getElementById('btn-advanced-toggle');
+      if (toggle) {
+        toggle.onclick = function() {
+          var fields = document.getElementById('advanced-fields');
+          var arrow = document.getElementById('advanced-arrow');
+          if (fields) {
+            fields.classList.toggle('hidden');
+            arrow.textContent = fields.classList.contains('hidden') ? '▶' : '▼';
+          }
+        };
+      }
+    }, 60);
+  }
+
+  // Bouton "Tester une modification" (bloc contexte + barre secondaire)
+  document.getElementById('btn-new-var').onclick = function() { openIterationModal(); };
+  var btnQuick = document.getElementById('btn-new-var-quick');
+  if (btnQuick) btnQuick.onclick = function() { openNewIterationModal(); };
+  // Empty state : créer Itération 1 silencieusement et aller vers l'import
+  var btnFirstImport = document.getElementById('btn-first-import');
+  if (btnFirstImport) {
+    btnFirstImport.onclick = async function() {
+      var v = await API.post('/variants', {
+        strategy_id: id,
+        name: 'Itération 1',
+        status: 'active',
+        key_change: '',
+      });
+      await loadSidebar();
+      location.hash = '#/import/' + v.id;
+    };
+  }
+  var btnCompare = document.getElementById('btn-compare-quick');
+  if (btnCompare) {
+    btnCompare.onclick = function() {
+      var activeVar = data.variants.find(function(v) { return v.status === 'active'; });
+      var lastVar = data.variants.length > 0 ? data.variants[0] : null;
+      if (activeVar) _compareSlotA = { id: activeVar.id, name: activeVar.name, strategyName: data.name };
+      if (lastVar && lastVar.id !== (activeVar && activeVar.id)) _compareSlotB = { id: lastVar.id, name: lastVar.name, strategyName: data.name };
+      location.hash = '#/compare';
+    };
+  }
+
+  function openIterationModal() { openNewIterationModal(); }
 }
 
 // ===== PAGE: VARIANT DETAIL =====
@@ -1647,17 +1900,63 @@ async function pageVariant(id) {
   }
 
   var infoVal = function(val) { return renderRichText(val); };
-  var infoCards = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm mt-4">' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Créée le</div><div class="text-slate-300">' + formatDate(data.created_at) + '</div></div>' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Variante parente</div><div>' +
-      (parentName
-        ? '<a href="#/variant/' + data.parent_variant_id + '" class="text-blue-400 hover:text-blue-300">' + esc(parentName) + '</a>'
-        : '<span class="text-slate-600 italic">aucune (racine)</span>') +
-    '</div></div>' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Hypothèse testée</div><div>' + infoVal(data.hypothesis) + '</div></div>' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Ce qui change</div><div>' + infoVal(data.changes) + '</div></div>' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Raison du changement</div><div>' + infoVal(data.change_reason) + '</div></div>' +
-    '<div class="bg-slate-700/30 rounded-lg px-4 py-3"><div class="text-slate-500 text-xs mb-1">Conclusion après test</div><div>' + infoVal(data.decision) + '</div></div>' +
+  var isRoot = !data.parent_variant_id;
+
+  // Helpers : carte statique vs carte éditable au clic
+  var staticCard = function(label, valueHtml) {
+    return '<div class="bg-slate-700/30 rounded-lg px-4 py-3">' +
+      '<div class="text-slate-500 text-xs mb-1">' + esc(label) + '</div>' +
+      '<div>' + valueHtml + '</div>' +
+    '</div>';
+  };
+  var editCard = function(field, label, valueHtml) {
+    return '<div class="bg-slate-700/30 rounded-lg px-4 py-3 cursor-pointer hover:bg-slate-600/30 transition group" data-editfield="' + field + '">' +
+      '<div class="text-slate-500 text-xs mb-1 flex items-center gap-1.5">' + esc(label) + '<span class="opacity-0 group-hover:opacity-60 text-[9px] transition">✎</span></div>' +
+      '<div class="edit-value">' + valueHtml + '</div>' +
+    '</div>';
+  };
+  var noValue = '<span class="text-slate-600 italic">non renseigné</span>';
+  // Pour itération racine : toujours visible = Créée le + Hypothèse + Conclusion
+  // Collapsible = Variante de base + Pourquoi + Changements techniques
+  // Pour itération dérivée : toujours visible = Créée le + Variante de base
+  // Collapsible = ouvert si contenu présent
+  var hasCollapsibleContent = isRoot
+    ? !!(data.change_reason || data.changes)
+    : !!(data.change_reason || data.hypothesis || data.changes || data.decision || data.description);
+
+  var alwaysVisible = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm mt-4">' +
+    (data.key_change ? editCard('key_change', '\u0394 Changement cl\u00e9',
+      '<span class="text-blue-200 font-medium">' + esc(data.key_change) + '</span>').replace('bg-slate-700/30', 'bg-blue-900/20 border border-blue-700/40') : '') +
+    staticCard('Cr\u00e9\u00e9e le', '<span class="text-slate-300">' + formatDate(data.created_at) + '</span>') +
+    (!isRoot ? staticCard('Variante de base',
+      parentName ? '<a href="#/variant/' + data.parent_variant_id + '" class="text-blue-400 hover:text-blue-300">' + esc(parentName) + '</a>' : '<span class="text-slate-600 italic">aucune (racine)</span>'
+    ) : '') +
+    (isRoot ? editCard('hypothesis', 'Hypoth\u00e8se test\u00e9e', data.hypothesis ? infoVal(data.hypothesis) : noValue) : '') +
+    (isRoot ? editCard('decision', 'Conclusion apr\u00e8s test', data.decision ? infoVal(data.decision) : noValue) : '') +
+  '</div>';
+
+  var collapsibleFields = isRoot
+    ? editCard('change_reason', 'Pourquoi ce test', data.change_reason ? infoVal(data.change_reason) : noValue) +
+      editCard('changes', 'Changements techniques', data.changes ? infoVal(data.changes) : noValue)
+    : staticCard('Variante de base',
+        parentName ? '<a href="#/variant/' + data.parent_variant_id + '" class="text-blue-400 hover:text-blue-300">' + esc(parentName) + '</a>' : '<span class="text-slate-600 italic">aucune (racine)</span>'
+      ) +
+      editCard('change_reason', 'Pourquoi ce test', data.change_reason ? infoVal(data.change_reason) : noValue) +
+      editCard('hypothesis', 'Hypoth\u00e8se test\u00e9e', data.hypothesis ? infoVal(data.hypothesis) : noValue) +
+      editCard('changes', 'Changements techniques', data.changes ? infoVal(data.changes) : noValue) +
+      editCard('decision', 'Conclusion apr\u00e8s test', data.decision ? infoVal(data.decision) : noValue);
+
+  var infoCards = alwaysVisible +
+  '<div class="mt-3">' +
+    '<button id="btn-toggle-text-fields" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition mb-2">' +
+      '<span id="text-fields-arrow" class="text-[10px]">' + (hasCollapsibleContent ? '▼' : '▶') + '</span>' +
+      'Annotations &amp; détails' +
+    '</button>' +
+    '<div id="var-text-fields" class="' + (hasCollapsibleContent ? '' : 'hidden') + '">' +
+      '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">' +
+        collapsibleFields +
+      '</div>' +
+    '</div>' +
   '</div>';
 
   APP.innerHTML = '<div class="fade-in">' +
@@ -1675,8 +1974,10 @@ async function pageVariant(id) {
           '</div>' +
           '<p class="text-slate-400 text-sm">' + renderRichText(data.description) + '</p>' +
         '</div>' +
-        '<div class="flex gap-2">' +
+        '<div class="flex flex-wrap gap-2">' +
           '<button id="btn-compare-var" class="text-sm text-blue-400 hover:text-blue-300 px-3 py-1.5 rounded-lg border border-blue-900 hover:border-blue-700 transition">⚖ Comparer</button>' +
+          (data.status !== 'active' ? '<button id="btn-promote-var" class="text-sm text-emerald-400 hover:text-emerald-300 px-3 py-1.5 rounded-lg border border-emerald-900 hover:border-emerald-700 transition">↑ Promouvoir en active</button>' : '') +
+          '<button id="btn-duplicate-var" class="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">Dupliquer</button>' +
           '<button id="btn-edit-var" class="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">Modifier</button>' +
           '<button id="btn-del-var" class="text-sm text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-900 hover:border-red-700 transition">Supprimer</button>' +
         '</div>' +
@@ -1707,7 +2008,7 @@ async function pageVariant(id) {
         '<h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Métriques agrégées — ' + data.runs.length + ' run' + (data.runs.length > 1 ? 's' : '') + '</h2>' +
         '<div class="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">' +
           aggItems.map(function(it) {
-            return '<div class="bg-slate-700/40 rounded-lg px-3 py-2 text-center">' +
+            return '<div class="metric-card bg-slate-700/40 rounded-lg px-3 py-2 text-center">' +
               '<div class="text-xs text-slate-500 mb-0.5">' + it.label + '</div>' +
               '<div class="text-sm font-semibold text-white">' + it.value + '</div>' +
             '</div>';
@@ -1745,25 +2046,220 @@ async function pageVariant(id) {
     '</div>') +
   '</div>';
 
+  // Toggle annotations
+  var btnToggleText = document.getElementById('btn-toggle-text-fields');
+  if (btnToggleText) {
+    var panel = document.getElementById('var-text-fields');
+    var arrow = document.getElementById('text-fields-arrow');
+    // Initialisation de l'état : si 'hidden' (fermé par défaut), on met max-height 0
+    if (panel) {
+      var isOpen = !panel.classList.contains('hidden');
+      panel.classList.remove('hidden');
+      panel.style.overflow = 'hidden';
+      panel.style.transition = 'max-height 0.3s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease';
+      if (isOpen) {
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+        panel.style.opacity = '1';
+      } else {
+        panel.style.maxHeight = '0';
+        panel.style.opacity = '0';
+      }
+    }
+    btnToggleText.onclick = function() {
+      if (!panel) return;
+      var opening = panel.style.maxHeight === '0px' || panel.style.maxHeight === '';
+      if (opening) {
+        // Ouvrir : on mesure d'abord la vraie hauteur
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+        panel.style.opacity = '1';
+        arrow.textContent = '▼';
+        // Après l'animation, laisser max-height libre pour les éditeurs inline qui agrandissent le panel
+        panel.addEventListener('transitionend', function onEnd() {
+          panel.removeEventListener('transitionend', onEnd);
+          if (panel.style.opacity === '1') panel.style.maxHeight = 'none';
+        });
+      } else {
+        // Fermer : remettre la hauteur exacte avant de l'animer à 0
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+        requestAnimationFrame(function() {
+          panel.style.maxHeight = '0';
+          panel.style.opacity = '0';
+        });
+        arrow.textContent = '▶';
+      }
+    };
+  }
+
+  // Inline edit au clic sur les cartes data-editfield
+  var RICH_FIELDS = { hypothesis: 1, decision: 1, change_reason: 1, changes: 1 };
+
+  document.querySelectorAll('[data-editfield]').forEach(function(card) {
+    var field = card.getAttribute('data-editfield');
+    card.addEventListener('click', function(e) {
+      // Ne rien faire si clic dans l'éditeur déjà ouvert
+      if (card.querySelector('.inline-rich-editor,.inline-input')) return;
+      if (e.target.closest('.inline-rich-editor,.inline-input')) return;
+      var valueDiv = card.querySelector('.edit-value');
+      if (!valueDiv) return;
+      var currentHtml = data[field] ? normalizeRichValue(data[field]) : '';
+
+      if (RICH_FIELDS[field]) {
+        // --- Rich text inline editor ---
+        valueDiv.innerHTML =
+          '<div class="inline-rich-editor">' +
+            '<div class="rich-toolbar inline-rich-toolbar">' +
+              '<button type="button" data-cmd="bold" title="Gras (Ctrl+B)"><strong>G</strong></button>' +
+              '<button type="button" data-cmd="italic" title="Italique (Ctrl+I)"><em>I</em></button>' +
+              '<button type="button" data-cmd="underline" title="Souligné (Ctrl+U)"><u>S</u></button>' +
+              '<span class="rich-sep"></span>' +
+              '<button type="button" data-cmd="insertUnorderedList" title="Puces">• ≡</button>' +
+              '<button type="button" data-cmd="insertOrderedList" title="Numérotée">1.</button>' +
+            '</div>' +
+            '<div class="rich-content inline-rich-content" contenteditable="true"></div>' +
+            '<div class="inline-rich-footer px-2 py-1 flex items-center justify-between border-t border-slate-700">' +
+              '<span class="text-xs text-slate-500">Ctrl+↵ &middot; Échap pour annuler</span>' +
+              '<button type="button" class="inline-save-btn text-xs px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium transition">Valider ✓</button>' +
+            '</div>' +
+          '</div>';
+
+        var wrapper = valueDiv.querySelector('.inline-rich-editor');
+        var content = valueDiv.querySelector('.inline-rich-content');
+        content.innerHTML = currentHtml;
+        content.focus();
+        // place cursor at end
+        var range = document.createRange();
+        range.selectNodeContents(content);
+        range.collapse(false);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+
+        // Toolbar buttons
+        wrapper.querySelectorAll('button[data-cmd]').forEach(function(btn) {
+          btn.addEventListener('mousedown', function(ev) {
+            ev.preventDefault();
+            content.focus();
+            document.execCommand(btn.getAttribute('data-cmd'), false, null);
+          });
+        });
+
+        // Notion-style shortcuts
+        content.addEventListener('input', function() { handleNotionShortcuts(content, wrapper); });
+
+        // Keyboard shortcuts
+        content.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Tab') {
+            var node = ev.target;
+            if (node && node.closest && node.closest('li')) { ev.preventDefault(); document.execCommand(ev.shiftKey ? 'outdent' : 'indent', false, null); }
+          }
+        });
+
+        // Bouton Valider
+        var saveBtn = wrapper.querySelector('.inline-save-btn');
+        if (saveBtn) {
+          saveBtn.addEventListener('mousedown', function(ev) {
+            ev.preventDefault(); // ne pas perdre le focus du contenteditable immédiatement
+            ev.stopPropagation();
+          });
+          saveBtn.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            saveRich();
+          });
+        }
+
+        var saved = false;
+        async function saveRich() {
+          if (saved) return; saved = true;
+          var newVal = content.innerHTML.trim();
+          // Vide si pas de texte réel (gère <br>, <p><br></p>, etc.)
+          if (!content.textContent.trim()) newVal = '';
+          else if (newVal === '<br>') newVal = '';
+          var patch = {}; patch[field] = newVal;
+          try { await API.put('/variants/' + id, patch); data[field] = newVal; } catch(e) {}
+          valueDiv.innerHTML = newVal ? renderRichText(newVal) : '<span class="text-slate-600 italic">non renseigné</span>';
+        }
+
+        // Sauvegarder quand le focus quitte l'éditeur
+        function onFocusOut(ev) {
+          if (!wrapper.contains(ev.relatedTarget)) {
+            document.removeEventListener('focusin', onFocusOut, true);
+            saveRich();
+          }
+        }
+        // focusin sur tout le doc pour détecter le clic ailleurs (toolbar incluse)
+        setTimeout(function() {
+          document.addEventListener('focusin', function handler(ev) {
+            if (!card.contains(ev.target)) {
+              document.removeEventListener('focusin', handler, true);
+              saveRich();
+            }
+          }, true);
+        }, 0);
+
+        content.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Escape') {
+            saved = true;
+            valueDiv.innerHTML = currentHtml ? renderRichText(currentHtml) : '<span class="text-slate-600 italic">non renseigné</span>';
+          }
+          if (ev.key === 'Enter' && ev.ctrlKey) {
+            ev.preventDefault();
+            saveRich();
+          }
+        });
+
+      } else {
+        // --- Champ texte simple (key_change) ---
+        valueDiv.innerHTML = '';
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.value = richTextPlain(data[field]) || '';
+        input.className = 'inline-input w-full bg-slate-700 text-slate-200 text-sm rounded px-2 py-1 outline-none border border-blue-500';
+        valueDiv.appendChild(input);
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+        var savedSimple = false;
+        async function saveSimple() {
+          if (savedSimple) return; savedSimple = true;
+          var newVal = input.value.trim();
+          var patch = {}; patch[field] = newVal;
+          try { await API.put('/variants/' + id, patch); data[field] = newVal; } catch(e) {}
+          valueDiv.innerHTML = newVal ? '<span class="text-blue-200 font-medium">' + esc(newVal) + '</span>' : '<span class="text-slate-600 italic">non renseigné</span>';
+        }
+        input.addEventListener('blur', saveSimple);
+        input.addEventListener('keydown', function(ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); }
+          if (ev.key === 'Escape') {
+            savedSimple = true;
+            var orig = richTextPlain(data[field]) || '';
+            valueDiv.innerHTML = orig ? '<span class="text-blue-200 font-medium">' + esc(orig) + '</span>' : '<span class="text-slate-600 italic">non renseigné</span>';
+          }
+        });
+      }
+    });
+  });
+
   document.getElementById('btn-edit-var').onclick = function() {
-    showModal('Modifier la Variante',
+    var statusOpts = [
+      {value:'idea',label:'Idée'},{value:'ready_to_test',label:'Prêt à tester'},
+      {value:'testing',label:'En test'},{value:'active',label:'Active'},
+      {value:'validated',label:'Validée'},{value:'rejected',label:'Rejetée'},
+      {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'},
+    ];
+    showModal('Modifier l\'itération',
       inputField('name', 'Nom', 'text', true, data.name) +
+      inputField('key_change', 'Changement clé', 'text', false, data.key_change || '', 'Ex : Entrée après close M15 au lieu de wick touch') +
+      textareaField('change_reason', 'Pourquoi ce test', false, richTextPlain(data.change_reason)) +
       richTextField('description', 'Description', data.description) +
       richTextField('hypothesis', 'Hypothèse testée', data.hypothesis) +
-      richTextField('changes', 'Ce qui change', data.changes) +
-      richTextField('change_reason', 'Raison du changement', data.change_reason) +
+      richTextField('changes', 'Changements techniques', data.changes) +
       richTextField('decision', 'Conclusion après test', data.decision) +
-      selectField('status', 'Statut', [
-        {value:'active',label:'Active'},{value:'testing',label:'Testing'},
-        {value:'archived',label:'Archivée'},{value:'abandoned',label:'Abandonnée'}
-      ], data.status),
+      selectField('status', 'Statut', statusOpts, data.status),
       async function(fd) {
         await API.put('/variants/' + id, {
           name: fd.get('name'),
+          key_change: fd.get('key_change') || '',
+          change_reason: fd.get('change_reason') || '',
           description: getRichValue('description'),
           hypothesis: getRichValue('hypothesis'),
           changes: getRichValue('changes'),
-          change_reason: getRichValue('change_reason'),
           decision: getRichValue('decision'),
           status: fd.get('status'),
         });
@@ -1774,10 +2270,44 @@ async function pageVariant(id) {
     );
   };
 
+  document.getElementById('btn-duplicate-var').onclick = function() {
+    showModal('Dupliquer cette itération',
+      inputField('name', 'Nom de la nouvelle itération', 'text', true, 'Copie — ' + data.name) +
+      inputField('key_change', 'Changement clé', 'text', false, '', 'Qu\'est-ce qui change par rapport à la version précédente ?') +
+      textareaField('change_reason', 'Pourquoi tu le testes', false),
+      async function(fd) {
+        await API.post('/variants', {
+          strategy_id: data.strategy_id,
+          name: fd.get('name'),
+          key_change: fd.get('key_change') || '',
+          change_reason: fd.get('change_reason') || '',
+          description: data.description || '',
+          hypothesis: data.hypothesis || '',
+          changes: data.changes || '',
+          decision: '',
+          parent_variant_id: data.id,
+          status: 'idea',
+        });
+        await loadSidebar();
+        route();
+      }
+    );
+  };
+
   document.getElementById('btn-compare-var').onclick = function() {
     _compareSlotA = { id: data.id, name: data.name, strategyName: stratName };
     location.hash = '#/compare';
   };
+
+  var btnPromote = document.getElementById('btn-promote-var');
+  if (btnPromote) {
+    btnPromote.onclick = async function() {
+      if (!confirm('Promouvoir "' + data.name + '" comme version active ?')) return;
+      await API.put('/variants/' + id, { status: 'active' });
+      await loadSidebar();
+      route();
+    };
+  }
 
   document.getElementById('btn-del-var').onclick = async function() {
     if (confirm('Supprimer cette variante ?')) {
@@ -2004,8 +2534,13 @@ var _selectedFormat = 'manual';
 async function pageImport(variantId) {
   _csvFile = null;
   var variant = await API.get('/variants/' + variantId);
+  var strat = null;
   var stratName = 'Stratégie';
-  try { stratName = (await API.get('/strategies/' + variant.strategy_id)).name; } catch(e) {}
+  try {
+    strat = await API.get('/strategies/' + variant.strategy_id);
+    stratName = strat.name;
+  } catch(e) {}
+  var stratVariantsCount = strat && strat.variants ? strat.variants.length : 2; // 2 = affiche le lien variante par défaut
 
   var fields = ['open_time','close_time','symbol','side','entry_price','exit_price','lot_size','pnl','pips'];
   var fieldLabels = {
@@ -2013,19 +2548,18 @@ async function pageImport(variantId) {
     side: 'Side (Type)', entry_price: 'Entry Price', exit_price: 'Exit Price',
     lot_size: 'Lot Size', pnl: 'PnL (Profit)', pips: 'Pips (optionnel)'
   };
+  // Breadcrumb simplifié si une seule variante (l'utilisateur n'a pas à savoir ce que c'est)
+  var crumbs = stratVariantsCount <= 1
+    ? [ {label:'Stratégies', href:'#/'}, {label: stratName, href:'#/strategy/' + variant.strategy_id}, {label: 'Import CSV'} ]
+    : [ {label:'Stratégies', href:'#/'}, {label: stratName, href:'#/strategy/' + variant.strategy_id}, {label: variant.name, href:'#/variant/' + variantId}, {label: 'Import CSV'} ];
 
   APP.innerHTML = '<div class="fade-in">' +
-    breadcrumb([
-      {label:'Stratégies', href:'#/'},
-      {label: stratName, href:'#/strategy/' + variant.strategy_id},
-      {label: variant.name, href:'#/variant/' + variantId},
-      {label: 'Import CSV'}
-    ]) +
+    breadcrumb(crumbs) +
     '<h1 class="text-2xl font-bold text-white mb-6">Importer un CSV</h1>' +
     '<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">' +
       '<div>' +
         '<div class="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-4">' +
-          inputField('label', 'Label du run') +
+          inputField('label', 'Nom de la run') +
           selectField('run_type', 'Type', [
             {value:'backtest',label:'Backtest'},
             {value:'forward',label:'Forward Test'},
