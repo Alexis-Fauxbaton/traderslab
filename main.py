@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -29,11 +30,19 @@ app.include_router(variants.router)
 app.include_router(runs.router)
 app.include_router(compare.router)
 
+# Choix du frontend : React (frontend-react/dist) si buildé, sinon vanilla (frontend/)
+_react_dist = os.path.join(os.path.dirname(__file__), "frontend-react", "dist")
+_use_react = os.path.isdir(_react_dist) and os.path.isfile(os.path.join(_react_dist, "index.html"))
+_frontend_dir = _react_dist if _use_react else "frontend"
+
 
 @app.get("/")
 def serve_frontend():
-    return FileResponse("frontend/index.html")
+    return FileResponse(os.path.join(_frontend_dir, "index.html"))
 
 
 # Fichiers statiques du frontend (CSS, JS)
-app.mount("/static", StaticFiles(directory="frontend"), name="static")
+app.mount("/static", StaticFiles(directory=_frontend_dir), name="static")
+# Servir les assets Vite (JS/CSS) directement sous /assets/
+if _use_react:
+    app.mount("/assets", StaticFiles(directory=os.path.join(_react_dist, "assets")), name="assets")
