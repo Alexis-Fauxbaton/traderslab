@@ -1,17 +1,25 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { SidebarProvider } from './hooks/useSidebar';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
-import Dashboard from './pages/Dashboard';
-import StrategyDetail from './pages/StrategyDetail';
-import VariantDetail from './pages/VariantDetail';
-import RunDetail from './pages/RunDetail';
-import ImportCSV from './pages/ImportCSV';
-import Compare from './pages/Compare';
+import { Spinner } from './components/UI';
 import Modal, { InputField, TextareaField, SelectField } from './components/Modal';
 import API from './lib/api';
 import { useSidebar } from './hooks/useSidebar';
+
+// Register Chart.js once at app level
+import { Chart, registerables } from 'chart.js';
+import zoomPlugin from 'chartjs-plugin-zoom';
+Chart.register(...registerables, zoomPlugin);
+
+// Lazy-loaded pages
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const StrategyDetail = lazy(() => import('./pages/StrategyDetail'));
+const VariantDetail = lazy(() => import('./pages/VariantDetail'));
+const RunDetail = lazy(() => import('./pages/RunDetail'));
+const ImportCSV = lazy(() => import('./pages/ImportCSV'));
+const Compare = lazy(() => import('./pages/Compare'));
 
 function getPageDepth(path) {
   if (!path || path === '/') return 0;
@@ -69,15 +77,17 @@ function AppInner() {
         <Sidebar collapsed={sidebarCollapsed} onNewStrategy={() => setShowNewStrat(true)} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">
           <div key={location.pathname} className={animClass} style={{ minHeight: '100%' }}>
-            <Routes>
-              <Route path="/" element={<Dashboard onNewStrategy={() => setShowNewStrat(true)} />} />
-              <Route path="/strategy/:id" element={<StrategyDetail setCompareSlotA={setCompareSlotA} setCompareSlotB={setCompareSlotB} />} />
-              <Route path="/variant/:id" element={<VariantDetail setCompareSlotA={setCompareSlotA} />} />
-              <Route path="/run/:id" element={<RunDetail />} />
-              <Route path="/import/:variantId" element={<ImportCSV />} />
-              <Route path="/compare" element={<Compare slotA={compareSlotA} slotB={compareSlotB} setSlotA={setCompareSlotA} setSlotB={setCompareSlotB} />} />
-              <Route path="*" element={<p className="text-center mt-20 text-slate-400">Page introuvable</p>} />
-            </Routes>
+            <Suspense fallback={<Spinner />}>
+              <Routes>
+                <Route path="/" element={<Dashboard onNewStrategy={() => setShowNewStrat(true)} />} />
+                <Route path="/strategy/:id" element={<StrategyDetail setCompareSlotA={setCompareSlotA} setCompareSlotB={setCompareSlotB} />} />
+                <Route path="/variant/:id" element={<VariantDetail setCompareSlotA={setCompareSlotA} />} />
+                <Route path="/run/:id" element={<RunDetail />} />
+                <Route path="/import/:variantId" element={<ImportCSV />} />
+                <Route path="/compare" element={<Compare slotA={compareSlotA} slotB={compareSlotB} setSlotA={setCompareSlotA} setSlotB={setCompareSlotB} />} />
+                <Route path="*" element={<p className="text-center mt-20 text-slate-400">Page introuvable</p>} />
+              </Routes>
+            </Suspense>
           </div>
         </main>
       </div>

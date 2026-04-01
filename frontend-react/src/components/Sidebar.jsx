@@ -2,22 +2,25 @@ import { useRef, useCallback, useEffect, useState } from 'react';
 import { useSidebar } from '../hooks/useSidebar';
 import { STATUS_LABELS } from '../lib/utils';
 
-export default function Sidebar({ onNewStrategy }) {
+export default function Sidebar({ collapsed, onNewStrategy }) {
   const { sidebarData, expanded, loading, toggleExpand, reorder } = useSidebar();
   const sidebarRef = useRef(null);
   const handleRef = useRef(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [width, setWidth] = useState(() => {
     const saved = parseInt(localStorage.getItem('sidebar_width'), 10);
     return (saved && saved >= 160 && saved <= 520) ? saved : 280;
   });
   const dragSrcRef = useRef(null);
+  const widthRef = useRef(width);
+
+  // Keep ref in sync for the closure
+  useEffect(() => { widthRef.current = width; }, [width]);
 
   // Resize handle
   const onMouseDown = useCallback((e) => {
     e.preventDefault();
     const startX = e.clientX;
-    const startW = sidebarRef.current?.offsetWidth || width;
+    const startW = sidebarRef.current?.offsetWidth || widthRef.current;
     const sidebar = sidebarRef.current;
     if (sidebar) sidebar.classList.add('resizing');
 
@@ -29,7 +32,7 @@ export default function Sidebar({ onNewStrategy }) {
       if (sidebar) sidebar.classList.remove('resizing');
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      localStorage.setItem('sidebar_width', width);
+      localStorage.setItem('sidebar_width', String(widthRef.current));
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
@@ -37,10 +40,6 @@ export default function Sidebar({ onNewStrategy }) {
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
-  }, [width]);
-
-  const toggleCollapse = useCallback(() => {
-    setCollapsed(c => !c);
   }, []);
 
   return (
@@ -93,11 +92,7 @@ export default function Sidebar({ onNewStrategy }) {
   );
 }
 
-export { Sidebar };
-export function useSidebarToggle() {
-  const [collapsed, setCollapsed] = useState(false);
-  return { collapsed, toggle: () => setCollapsed(c => !c) };
-}
+
 
 function StrategyItem({ strategy: s, isOpen, onToggle, dragSrcRef, onReorder }) {
   const varCount = s.variants ? s.variants.length : 0;

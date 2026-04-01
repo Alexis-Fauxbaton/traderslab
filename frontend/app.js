@@ -1875,19 +1875,11 @@ async function pageStrategy(id) {
 // ===== PAGE: VARIANT DETAIL =====
 
 async function pageVariant(id) {
-  var [data, metricsResp] = await Promise.all([
-    API.get('/variants/' + id),
-    API.get('/variants/' + id + '/metrics').catch(function() { return {aggregate_metrics: null}; }),
-  ]);
-  var aggMetrics = metricsResp.aggregate_metrics;
-  var lineage = null;
-  try { lineage = await API.get('/variants/' + id + '/lineage'); } catch(e) {}
-  var stratName = 'Stratégie';
-  try { stratName = (await API.get('/strategies/' + data.strategy_id)).name; } catch(e) {}
-  var parentName = null;
-  if (data.parent_variant_id) {
-    try { parentName = (await API.get('/variants/' + data.parent_variant_id)).name; } catch(e) {}
-  }
+  var data = await API.get('/variants/' + id);
+  var aggMetrics = data.aggregate_metrics || null;
+  var lineage = data.lineage || null;
+  var stratName = data.strategy_name || 'Stratégie';
+  var parentName = data.parent_variant_name || null;
   saveLastVisit('/variant/' + id, [{ label: 'Stratégies', href: '#/' }, { label: stratName, href: '#/strategy/' + data.strategy_id }, { label: data.name }]);
 
   // Évaluation de la variante
@@ -2346,7 +2338,7 @@ async function pageRun(id) {
     var variant = await API.get('/variants/' + data.variant_id);
     variantName = variant.name;
     stratId = variant.strategy_id;
-    stratName = (await API.get('/strategies/' + stratId)).name;
+    stratName = variant.strategy_name || 'Stratégie';
   } catch(e) {}
   saveLastVisit('/run/' + id, [{ label: 'Stratégies', href: '#/' }, { label: stratName, href: '#/strategy/' + stratId }, { label: variantName, href: '#/variant/' + data.variant_id }, { label: data.label }]);
 

@@ -1,17 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Chart, registerables } from 'chart.js';
-import zoomPlugin from 'chartjs-plugin-zoom';
+import { Chart } from 'chart.js';
 import API from '../lib/api';
 import {
   formatDate, formatDateTime, formatPercent, setCurrentAvgLoss, getUnitSettings,
+  buildRunMetrics,
 } from '../lib/utils';
-import { buildRunMetrics } from '../lib/utils';
 import { Breadcrumb, Spinner, PnlSpan, DrawdownSpan, MetricCardLarge } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { Evaluation } from '../evaluation';
-
-Chart.register(...registerables, zoomPlugin);
 
 export default function RunDetail() {
   const { id } = useParams();
@@ -19,6 +16,10 @@ export default function RunDetail() {
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
   const [data, setData] = useState(null);
+  const [trades, setTrades] = useState(null);
+  const [tradesPage, setTradesPage] = useState(1);
+  const [tradesMeta, setTradesMeta] = useState(null);
+  const [showTrades, setShowTrades] = useState(false);
   const [stratName, setStratName] = useState('Stratégie');
   const [variantName, setVariantName] = useState('Variante');
   const [stratId, setStratId] = useState('');
@@ -32,17 +33,17 @@ export default function RunDetail() {
     return () => window.removeEventListener('unitchange', handler);
   }, []);
 
+  // Load run summary (lightweight — no trades)
   useEffect(() => {
     (async () => {
-      const runData = await API.get('/runs/' + id);
+      const runData = await API.get('/runs/' + id + '/summary');
       setData(runData);
       let sn = 'Stratégie', vn = 'Variante', sid = '';
       try {
         const variant = await API.get('/variants/' + runData.variant_id);
         vn = variant.name; sid = variant.strategy_id;
-        setVariantName(vn); setStratId(sid);
-        const strat = await API.get('/strategies/' + variant.strategy_id);
-        sn = strat.name; setStratName(sn);
+        sn = variant.strategy_name || sn;
+        setVariantName(vn); setStratId(sid); setStratName(sn);
       } catch {}
       try {
         localStorage.setItem('lastVisit', JSON.stringify({
@@ -52,6 +53,16 @@ export default function RunDetail() {
       } catch {}
     })();
   }, [id]);
+
+  // Load trades on demand (paginated)
+  useEffect(() => {
+    if (!showTrades) return;
+    (async () => {
+      const resp = await API.get('/runs/' + id + '/trades?page=' + tradesPage + '&per_page=100');
+      setTrades(prev => tradesPage === 1 ? resp.items : [...(prev || []), ...resp.items]);
+      setTradesMeta(resp);
+    })();
+  }, [showTrades, tradesPage, id]);
 
   // Equity chart
   useEffect(() => {
@@ -141,8 +152,6 @@ export default function RunDetail() {
     setIsZoomed(false);
   };
 
-  let cumPnl = 0;
-
   return (
     <div className="fade-in">
       <Breadcrumb items={[
@@ -199,45 +208,62 @@ export default function RunDetail() {
         <div style={{ height: 300 }}><canvas ref={chartRef} /></div>
       </div>
 
-      {/* Trades table */}
+      {/* Trades table — lazy loaded */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Trades ({data.trades.length})</h2>
-        <div className="overflow-x-auto max-h-96">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-400 border-b border-slate-700">
-                <th className="py-2 px-3 bg-slate-800">Open</th>
-                <th className="py-2 px-3 bg-slate-800">Close</th>
-                <th className="py-2 px-3 bg-slate-800">Symbol</th>
-                <th className="py-2 px-3 bg-slate-800">Side</th>
-                <th className="py-2 px-3 bg-slate-800">Entry</th>
-                <th className="py-2 px-3 bg-slate-800">Exit</th>
-                <th className="py-2 px-3 bg-slate-800">Lots</th>
-                <th className="py-2 px-3 bg-slate-800">PnL</th>
-                <th className="py-2 px-3 bg-slate-800">Pips</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.trades.map((t, i) => {
-                const pnlBefore = cumPnl;
-                cumPnl += (t.pnl || 0);
-                return (
-                  <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                    <td className="py-2 px-3 text-slate-300">{formatDateTime(t.open_time)}</td>
-                    <td className="py-2 px-3 text-slate-300">{formatDateTime(t.close_time)}</td>
-                    <td className="py-2 px-3">{t.symbol}</td>
-                    <td className="py-2 px-3"><span className={t.side === 'long' ? 'text-green-400' : 'text-red-400'}>{t.side}</span></td>
-                    <td className="py-2 px-3">{t.entry_price}</td>
-                    <td className="py-2 px-3">{t.exit_price}</td>
-                    <td className="py-2 px-3">{t.lot_size}</td>
-                    <td className="py-2 px-3"><PnlSpan value={t.pnl} denom={_unitSettings.initial_balance + pnlBefore} /></td>
-                    <td className="py-2 px-3">{t.pips != null ? t.pips : '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Trades ({m.total_trades || 0})</h2>
+          {!showTrades && (
+            <button onClick={() => setShowTrades(true)} className="text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded transition">
+              Charger les trades
+            </button>
+          )}
         </div>
+        {showTrades && trades && (
+          <>
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-slate-400 border-b border-slate-700">
+                    <th className="py-2 px-3 bg-slate-800">Open</th>
+                    <th className="py-2 px-3 bg-slate-800">Close</th>
+                    <th className="py-2 px-3 bg-slate-800">Symbol</th>
+                    <th className="py-2 px-3 bg-slate-800">Side</th>
+                    <th className="py-2 px-3 bg-slate-800">Entry</th>
+                    <th className="py-2 px-3 bg-slate-800">Exit</th>
+                    <th className="py-2 px-3 bg-slate-800">Lots</th>
+                    <th className="py-2 px-3 bg-slate-800">PnL</th>
+                    <th className="py-2 px-3 bg-slate-800">Pips</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trades.map((t, i) => {
+                    return (
+                      <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                        <td className="py-2 px-3 text-slate-300">{formatDateTime(t.open_time)}</td>
+                        <td className="py-2 px-3 text-slate-300">{formatDateTime(t.close_time)}</td>
+                        <td className="py-2 px-3">{t.symbol}</td>
+                        <td className="py-2 px-3"><span className={t.side === 'long' ? 'text-green-400' : 'text-red-400'}>{t.side}</span></td>
+                        <td className="py-2 px-3">{t.entry_price}</td>
+                        <td className="py-2 px-3">{t.exit_price}</td>
+                        <td className="py-2 px-3">{t.lot_size}</td>
+                        <td className="py-2 px-3"><PnlSpan value={t.pnl} /></td>
+                        <td className="py-2 px-3">{t.pips != null ? t.pips : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {tradesMeta && tradesMeta.page < tradesMeta.pages && (
+              <div className="mt-3 text-center">
+                <button onClick={() => setTradesPage(p => p + 1)} className="text-sm bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded transition">
+                  Charger plus ({tradesMeta.total - trades.length} restants)
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {showTrades && !trades && <Spinner />}
       </div>
     </div>
   );

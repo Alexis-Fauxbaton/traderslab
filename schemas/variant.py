@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 
 class VariantStatus(str, Enum):
@@ -60,6 +61,14 @@ class VariantDetail(VariantOut):
     runs: list["RunOut"] = []
 
 
+class VariantDetailEnriched(VariantDetail):
+    """Variante enrichie — réduit les round-trips frontend."""
+    strategy_name: str | None = None
+    parent_variant_name: str | None = None
+    aggregate_metrics: dict[str, Any] | None = None
+    lineage: "VariantLineageNode | None" = None
+
+
 class VariantLineageNode(BaseModel):
     """Nœud dans l'arbre de lignée d'une variante."""
     id: str
@@ -76,4 +85,5 @@ class VariantLineageNode(BaseModel):
 from schemas.run import RunOut  # noqa: E402
 
 VariantDetail.model_rebuild()
+VariantDetailEnriched.model_rebuild()
 VariantLineageNode.model_rebuild()

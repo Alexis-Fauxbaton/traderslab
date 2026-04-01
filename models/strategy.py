@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, JSON
 from database import Base
 
 
@@ -14,3 +14,4 @@ class Strategy(Base):
     market = Column(String, nullable=False)
     timeframe = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    aggregate_metrics = Column(JSON, nullable=True)

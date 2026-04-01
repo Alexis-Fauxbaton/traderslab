@@ -171,25 +171,12 @@ export default function VariantDetail({ setCompareSlotA }) {
 
   useEffect(() => {
     (async () => {
-      const [varData, metricsResp] = await Promise.all([
-        API.get('/variants/' + id),
-        API.get('/variants/' + id + '/metrics').catch(() => ({ aggregate_metrics: null })),
-      ]);
+      const varData = await API.get('/variants/' + id);
       setData(varData);
-      setAggMetrics(metricsResp.aggregate_metrics);
-
-      let sn = 'Stratégie';
-      try { sn = (await API.get('/strategies/' + varData.strategy_id)).name; } catch {}
-      setStratName(sn);
-
-      let pn = null;
-      if (varData.parent_variant_id) {
-        try { pn = (await API.get('/variants/' + varData.parent_variant_id)).name; } catch {}
-        setParentName(pn);
-      }
-
-      let lin = null;
-      try { lin = await API.get('/variants/' + id + '/lineage'); setLineage(lin); } catch {}
+      setAggMetrics(varData.aggregate_metrics || null);
+      setStratName(varData.strategy_name || 'Stratégie');
+      setParentName(varData.parent_variant_name || null);
+      setLineage(varData.lineage || null);
 
       const hasContent = !!(varData.change_reason || varData.changes || varData.hypothesis || varData.decision || varData.description);
       setTextFieldsOpen(hasContent);
@@ -197,7 +184,7 @@ export default function VariantDetail({ setCompareSlotA }) {
       try {
         localStorage.setItem('lastVisit', JSON.stringify({
           hash: '/variant/' + id, ts: Date.now(),
-          crumbs: [{ label: 'Stratégies', href: '#/' }, { label: sn, href: '#/strategy/' + varData.strategy_id }, { label: varData.name }],
+          crumbs: [{ label: 'Stratégies', href: '#/' }, { label: varData.strategy_name || 'Stratégie', href: '#/strategy/' + varData.strategy_id }, { label: varData.name }],
         }));
       } catch {}
     })();

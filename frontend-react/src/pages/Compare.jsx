@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Chart, registerables } from 'chart.js';
+import { Chart } from 'chart.js';
 import flatpickr from 'flatpickr';
 import { French } from 'flatpickr/dist/l10n/fr.js';
 import API from '../lib/api';
@@ -12,8 +12,6 @@ import {
 import { Spinner, StatusBadge, PnlSpan, DrawdownSpan } from '../components/UI';
 import { ComparisonEvaluationPanel } from '../components/EvaluationPanel';
 import { Evaluation } from '../evaluation';
-
-Chart.register(...registerables);
 
 // Temporal analysis helpers
 function getBucketKey(dateStr, granularity) {

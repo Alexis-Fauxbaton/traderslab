@@ -28,6 +28,15 @@ class RunImportResponse(BaseModel):
     metrics: dict[str, Any]
 
 
+class TradesPaginated(BaseModel):
+    items: list["TradeOut"] = []
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
 from schemas.trade import TradeOut  # noqa: E402
 
 RunDetail.model_rebuild()
+TradesPaginated.model_rebuild()

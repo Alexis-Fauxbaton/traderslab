@@ -16,5 +16,13 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('chart.js') || id.includes('react-chartjs-2') || id.includes('chartjs-plugin-zoom')) return 'chart';
+          if (id.includes('vis-network') || id.includes('vis-data')) return 'vis';
+        },
+      },
+    },
   },
 });

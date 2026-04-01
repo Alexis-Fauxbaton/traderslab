@@ -9,7 +9,7 @@ class Run(Base):
     __tablename__ = "runs"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    variant_id = Column(String, ForeignKey("variants.id"), nullable=False)
+    variant_id = Column(String, ForeignKey("variants.id"), nullable=False, index=True)
     label = Column(String, nullable=False)
     type = Column(String, nullable=False)  # backtest | forward | live
     start_date = Column(Date, nullable=True)

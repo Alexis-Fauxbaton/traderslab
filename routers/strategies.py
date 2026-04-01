@@ -9,7 +9,6 @@ from models.run import Run
 from models.trade import Trade
 from schemas.strategy import StrategyCreate, StrategyUpdate, StrategyOut, StrategyDetail
 from schemas.variant import VariantOut
-from services.metrics import compute_metrics
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
@@ -116,23 +115,12 @@ def dashboard_activity(db: Session = Depends(get_db)):
 
 @router.get("/dashboard")
 def dashboard(db: Session = Depends(get_db)):
-    """Retourne toutes les stratégies avec métriques agrégées (tous runs, toutes variantes)."""
+    """Retourne toutes les stratégies avec métriques agrégées pré-calculées."""
     strategies = db.query(Strategy).order_by(Strategy.created_at.desc()).all()
     result = []
     for s in strategies:
-        trades_rows = (
-            db.query(Trade)
-            .join(Run, Trade.run_id == Run.id)
-            .join(Variant, Run.variant_id == Variant.id)
-            .filter(Variant.strategy_id == s.id)
-            .order_by(Trade.close_time)
-            .all()
-        )
-        trades_data = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades_rows]
-        metrics = compute_metrics(trades_data) if trades_data else None
-
         strategy_dict = StrategyOut.model_validate(s).model_dump()
-        strategy_dict["aggregate_metrics"] = metrics
+        strategy_dict["aggregate_metrics"] = s.aggregate_metrics
         result.append(strategy_dict)
 
     return result
@@ -140,7 +128,7 @@ def dashboard(db: Session = Depends(get_db)):
 
 @router.get("/{strategy_id}/variants-summary")
 def variants_summary(strategy_id: str, db: Session = Depends(get_db)):
-    """Retourne les variantes d'une stratégie avec métriques agrégées par variante."""
+    """Retourne les variantes d'une stratégie avec métriques agrégées pré-calculées."""
     strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
@@ -148,18 +136,8 @@ def variants_summary(strategy_id: str, db: Session = Depends(get_db)):
     variants = db.query(Variant).filter(Variant.strategy_id == strategy_id).all()
     result = []
     for v in variants:
-        trades_rows = (
-            db.query(Trade)
-            .join(Run, Trade.run_id == Run.id)
-            .filter(Run.variant_id == v.id)
-            .order_by(Trade.close_time)
-            .all()
-        )
-        trades_data = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades_rows]
-        metrics = compute_metrics(trades_data) if trades_data else None
-
         variant_dict = VariantOut.model_validate(v).model_dump()
-        variant_dict["aggregate_metrics"] = metrics
+        variant_dict["aggregate_metrics"] = v.aggregate_metrics
         result.append(variant_dict)
 
     return result

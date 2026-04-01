@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Chart, registerables } from 'chart.js';
-
-Chart.register(...registerables);
+import { Chart } from 'chart.js';
 
 export default function MiniChart({ data, height = 60 }) {
   const canvasRef = useRef(null);

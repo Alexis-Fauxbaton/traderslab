@@ -1,6 +1,10 @@
 import os
-from sqlalchemy import create_engine
+import logging
+
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker, declarative_base
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./traderslab.db")
 
@@ -18,3 +22,33 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def run_migrations():
+    """Apply lightweight migrations for existing databases (new columns + indexes)."""
+    insp = inspect(engine)
+
+    _add_column_if_missing(insp, "variants", "aggregate_metrics", "TEXT")
+    _add_column_if_missing(insp, "strategies", "aggregate_metrics", "TEXT")
+
+    _create_index_if_missing("ix_trades_run_id", "trades", "run_id")
+    _create_index_if_missing("ix_trades_close_time", "trades", "close_time")
+    _create_index_if_missing("ix_runs_variant_id", "runs", "variant_id")
+    _create_index_if_missing("ix_variants_strategy_id", "variants", "strategy_id")
+    _create_index_if_missing("ix_variants_parent_variant_id", "variants", "parent_variant_id")
+
+
+def _add_column_if_missing(insp, table: str, column: str, col_type: str):
+    if not insp.has_table(table):
+        return
+    existing = {c["name"] for c in insp.get_columns(table)}
+    if column not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+        logger.info("Migration: added column %s.%s", table, column)
+
+
+def _create_index_if_missing(index_name: str, table: str, column: str):
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"))
+    logger.info("Migration: ensured index %s on %s(%s)", index_name, table, column)

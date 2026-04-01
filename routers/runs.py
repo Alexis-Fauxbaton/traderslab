@@ -1,4 +1,6 @@
 import json
+import math
+
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
@@ -6,10 +8,11 @@ from database import get_db
 from models.run import Run
 from models.trade import Trade
 from models.variant import Variant
-from schemas.run import RunOut, RunDetail, RunImportResponse
+from schemas.run import RunOut, RunDetail, RunImportResponse, TradesPaginated
 from schemas.trade import TradeOut
 from services.csv_parser import parse_csv
 from services.metrics import compute_metrics, _compute_sharpe_annualized
+from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -21,6 +24,46 @@ def list_runs(variant_id: str = Query(...), db: Session = Depends(get_db)):
         .filter(Run.variant_id == variant_id)
         .order_by(Run.imported_at.desc())
         .all()
+    )
+
+
+@router.get("/{run_id}/summary", response_model=RunOut)
+def get_run_summary(run_id: str, db: Session = Depends(get_db)):
+    """Retourne le run sans ses trades — léger, pour header + métriques + chart."""
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "Run introuvable")
+    return run
+
+
+@router.get("/{run_id}/trades", response_model=TradesPaginated)
+def get_run_trades(
+    run_id: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Retourne les trades d'un run avec pagination."""
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "Run introuvable")
+
+    total = db.query(Trade).filter(Trade.run_id == run_id).count()
+    trades = (
+        db.query(Trade)
+        .filter(Trade.run_id == run_id)
+        .order_by(Trade.close_time)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
+    return TradesPaginated(
+        items=[TradeOut.model_validate(t) for t in trades],
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=math.ceil(total / per_page) if total else 0,
     )
 
 
@@ -49,9 +92,17 @@ def delete_run(run_id: str, db: Session = Depends(get_db)):
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(404, "Run introuvable")
+    variant_id = run.variant_id
     # Supprimer les trades associés d'abord
     db.query(Trade).filter(Trade.run_id == run_id).delete()
     db.delete(run)
+    db.flush()
+
+    # Recalculer les métriques agrégées
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    recompute_variant_metrics(variant_id, db)
+    if variant:
+        recompute_strategy_metrics(variant.strategy_id, db)
     db.commit()
 
 
@@ -135,6 +186,12 @@ async def import_csv(
     for t in trades_data:
         trade = Trade(run_id=run.id, **t)
         db.add(trade)
+
+    db.flush()
+
+    # Recalculer les métriques agrégées variant + stratégie
+    recompute_variant_metrics(variant_id, db)
+    recompute_strategy_metrics(variant.strategy_id, db)
 
     db.commit()
     db.refresh(run)

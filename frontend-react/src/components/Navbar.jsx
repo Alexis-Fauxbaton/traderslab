@@ -73,22 +73,13 @@ export default function Navbar({ onToggleSidebar }) {
       </nav>
 
       {showSettings && (
-        <Modal title="Paramètres des unités" onClose={() => setShowSettings(false)}>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const fd = new FormData(e.target);
-            const settings = getUnitSettings();
-            settings.initial_balance = parseFloat(fd.get('initial_balance')) || 10000;
-            setUnitSettings(settings);
-            setShowSettings(false);
-            window.dispatchEvent(new Event('unitchange'));
-          }}>
-            <InputField name="initial_balance" label="Capital initial ($)" type="number" required value={getUnitSettings().initial_balance} />
-            <div className="flex justify-end gap-3 mt-6">
-              <button type="button" onClick={() => setShowSettings(false)} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition">Annuler</button>
-              <button type="submit" className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Confirmer</button>
-            </div>
-          </form>
+        <Modal title="Paramètres des unités" onClose={() => setShowSettings(false)} onSubmit={(fd) => {
+          const settings = getUnitSettings();
+          settings.initial_balance = parseFloat(fd.get('initial_balance')) || 10000;
+          setUnitSettings(settings);
+          window.dispatchEvent(new Event('unitchange'));
+        }}>
+          <InputField name="initial_balance" label="Capital initial ($)" type="number" required value={getUnitSettings().initial_balance} />
         </Modal>
       )}
     </>

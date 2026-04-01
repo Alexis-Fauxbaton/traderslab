@@ -28,6 +28,7 @@ export function SidebarProvider({ children }) {
   const reload = useCallback(async () => {
     try {
       const strategies = await API.get('/strategies');
+      // Fetch all strategy details in parallel
       const details = await Promise.all(strategies.map(s => API.get('/strategies/' + s.id)));
       setSidebarData(sortData(details));
     } catch {
