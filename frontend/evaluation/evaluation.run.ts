@@ -9,7 +9,7 @@ import type {
   RecommendedRunAction,
 } from "./evaluation.types";
 import { collectRunWarnings } from "./evaluation.warnings";
-import { computeConfidence, hasHighSeverity, isDrawdownAcceptable } from "./evaluation.helpers";
+import { computeConfidence, hasHighSeverity, isDrawdownAcceptable, computeRobustnessScore } from "./evaluation.helpers";
 import {
   buildRunSummary,
   buildRunNextSteps,
@@ -18,6 +18,14 @@ import {
   profitFactorSentence,
   drawdownSentence,
   expectancySentence,
+  sortinoSentence,
+  recoveryFactorSentence,
+  riskRewardSentence,
+  streakSentence,
+  consistencySentence,
+  significanceSentence,
+  monteCarloSentence,
+  degradationSentence,
 } from "./evaluation.formatters";
 
 /**
@@ -63,6 +71,10 @@ export function evaluateRun(run: RunMetrics): EvaluationResult {
         "Relancer l'import avec le bon mapping de colonnes",
       ],
       recommendedAction: { type: "review_data", target: null },
+      robustness: null,
+      degradation: null,
+      monteCarlo: null,
+      significance: null,
     };
   }
 
@@ -77,6 +89,10 @@ export function evaluateRun(run: RunMetrics): EvaluationResult {
       warnings,
       nextSteps: ["Vérifier le format des données importées et le mapping de colonnes"],
       recommendedAction: { type: "review_data", target: null },
+      robustness: null,
+      degradation: null,
+      monteCarlo: null,
+      significance: null,
     };
   }
 
@@ -99,6 +115,31 @@ export function evaluateRun(run: RunMetrics): EvaluationResult {
 
   const exp = expectancySentence(run.expectancy);
   if (exp) ((run.expectancy ?? 0) > 0 ? strengths : weaknesses).push(exp);
+
+  // ---- Pro metrics sentences ----
+  const sort = sortinoSentence(run.sortinoRatio);
+  if (sort) ((run.sortinoRatio ?? 0) > 1 ? strengths : weaknesses).push(sort);
+
+  const rf = recoveryFactorSentence(run.recoveryFactor);
+  if (rf) ((run.recoveryFactor ?? 0) > 1 ? strengths : weaknesses).push(rf);
+
+  const rr = riskRewardSentence(run.riskRewardRatio);
+  if (rr) ((run.riskRewardRatio ?? 0) >= 1 ? strengths : weaknesses).push(rr);
+
+  const streak = streakSentence(run.maxConsecutiveLosses);
+  if (streak) ((run.maxConsecutiveLosses ?? 0) <= 5 ? strengths : weaknesses).push(streak);
+
+  const cons = consistencySentence(run.consistencyScore);
+  if (cons) ((run.consistencyScore ?? 0) >= 50 ? strengths : weaknesses).push(cons);
+
+  const sig = significanceSentence(run.ttest);
+  if (sig) (run.ttest?.significant_5pct ? strengths : weaknesses).push(sig);
+
+  const mc = monteCarloSentence(run.monteCarlo);
+  if (mc) ((run.monteCarlo?.pct_profitable ?? 0) >= 60 ? strengths : weaknesses).push(mc);
+
+  const deg = degradationSentence(run.splitHalf);
+  if (deg) (run.splitHalf?.status !== "degrading" ? strengths : weaknesses).push(deg);
 
   // ---- 4. Logique de verdict ----
 
@@ -138,6 +179,9 @@ export function evaluateRun(run: RunMetrics): EvaluationResult {
     reasons.push("Signaux mitigés — poursuite des tests recommandée");
   }
 
+  // ---- 5. Score de robustesse ----
+  const robustness = computeRobustnessScore(run);
+
   return {
     verdict,
     confidence: computeConfidence(warnings),
@@ -148,5 +192,9 @@ export function evaluateRun(run: RunMetrics): EvaluationResult {
     warnings,
     nextSteps: buildRunNextSteps(verdict, warnings),
     recommendedAction: { type: actionType, target: run.id },
+    robustness,
+    degradation: run.splitHalf ?? null,
+    monteCarlo: run.monteCarlo ?? null,
+    significance: run.ttest ?? null,
   };
 }

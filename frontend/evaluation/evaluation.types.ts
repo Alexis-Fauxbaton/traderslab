@@ -9,6 +9,7 @@ export type Verdict = "promising" | "fragile" | "inconclusive" | "invalid";
 export type ComparisonVerdict = "promote_a" | "promote_b" | "keep_testing" | "inconclusive";
 export type WinnerSide = "a" | "b" | null;
 export type WarningTarget = "run" | "variant" | "a" | "b" | "comparison";
+export type DegradationStatus = "degrading" | "improving" | "stable";
 
 // ---- Warning ----
 
@@ -19,6 +20,46 @@ export interface Warning {
   message: string;
   target: WarningTarget;
   meta?: Record<string, unknown>;
+}
+
+// ---- Statistical results (from backend) ----
+
+export interface TTestResult {
+  t_statistic: number;
+  p_value: number;
+  significant_5pct: boolean;
+  significant_1pct: boolean;
+  n: number;
+}
+
+export interface MonteCarloResult {
+  pnl_median: number;
+  pnl_ci_lower: number;
+  pnl_ci_upper: number;
+  max_dd_median: number;
+  max_dd_ci_lower: number;
+  max_dd_ci_upper: number;
+  pct_profitable: number;
+  n_simulations: number;
+}
+
+export interface SplitHalfResult {
+  first_half: { pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; trades: number };
+  second_half: { pnl: number; win_rate: number; profit_factor: number | null; expectancy: number; trades: number };
+  status: DegradationStatus;
+  degradation_signals: number;
+}
+
+export interface DistributionStats {
+  skewness: number | null;
+  kurtosis: number | null;
+  histogram: Array<{ bin_start: number; bin_end: number; count: number }>;
+}
+
+export interface MonthlyBreakdown {
+  month: string;
+  pnl: number;
+  trades: number;
 }
 
 // ---- Metrics inputs ----
@@ -42,6 +83,21 @@ export interface RunMetrics {
   periodStart: string | Date | null;
   periodEnd: string | Date | null;
   coveredDays: number | null;
+  // Pro metrics
+  sharpeRatio: number | null;
+  sortinoRatio: number | null;
+  calmarRatio: number | null;
+  recoveryFactor: number | null;
+  riskRewardRatio: number | null;
+  maxConsecutiveWins: number | null;
+  maxConsecutiveLosses: number | null;
+  consistencyScore: number | null;
+  ttest: TTestResult | null;
+  monteCarlo: MonteCarloResult | null;
+  splitHalf: SplitHalfResult | null;
+  distribution: DistributionStats | null;
+  monthlyBreakdown: MonthlyBreakdown[] | null;
+  underwater: number[] | null;
 }
 
 export interface VariantMetrics {
@@ -64,6 +120,21 @@ export interface VariantMetrics {
   coveredDays: number | null;
   runTypes: RunType[];
   runsCount: number | null;
+  // Pro metrics
+  sharpeRatio: number | null;
+  sortinoRatio: number | null;
+  calmarRatio: number | null;
+  recoveryFactor: number | null;
+  riskRewardRatio: number | null;
+  maxConsecutiveWins: number | null;
+  maxConsecutiveLosses: number | null;
+  consistencyScore: number | null;
+  ttest: TTestResult | null;
+  monteCarlo: MonteCarloResult | null;
+  splitHalf: SplitHalfResult | null;
+  distribution: DistributionStats | null;
+  monthlyBreakdown: MonthlyBreakdown[] | null;
+  underwater: number[] | null;
 }
 
 export interface ComparisonInput {
@@ -114,6 +185,15 @@ export interface RecommendedComparisonAction {
   target: WinnerSide;
 }
 
+export interface RobustnessScore {
+  total: number;              // 0-100
+  consistencyPart: number;    // 0-30
+  recoveryPart: number;       // 0-20
+  riskRewardPart: number;     // 0-15
+  sampleSizePart: number;     // 0-15
+  significancePart: number;   // 0-20
+}
+
 export interface EvaluationResult {
   verdict: Verdict;
   confidence: Confidence;
@@ -124,6 +204,10 @@ export interface EvaluationResult {
   warnings: Warning[];
   nextSteps: string[];
   recommendedAction: RecommendedRunAction | RecommendedVariantAction;
+  robustness: RobustnessScore | null;
+  degradation: SplitHalfResult | null;
+  monteCarlo: MonteCarloResult | null;
+  significance: TTestResult | null;
 }
 
 export interface ComparisonResult {
@@ -140,4 +224,5 @@ export interface ComparisonResult {
   nextSteps: string[];
   score: ScoreResult;
   recommendedAction: RecommendedComparisonAction;
+  significanceTest: TTestResult | null;
 }

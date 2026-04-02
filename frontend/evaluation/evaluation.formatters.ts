@@ -12,6 +12,9 @@ import type {
   WinnerSide,
   ScoreResult,
   MetricWinner,
+  TTestResult,
+  MonteCarloResult,
+  SplitHalfResult,
 } from "./evaluation.types";
 
 // ---- Labels ----
@@ -88,6 +91,62 @@ export function expectancySentence(expectancy: number | null): string | null {
     : `Espérance mathématique négative (${expectancy.toFixed(2)})`;
 }
 
+// ---- Phrases Pro (nouvelles métriques) ----
+
+export function sortinoSentence(sortino: number | null): string | null {
+  if (sortino === null) return null;
+  if (sortino > 2) return `Sortino ratio excellent (${sortino.toFixed(2)}) — faible volatilité à la baisse`;
+  if (sortino > 1) return `Sortino ratio positif (${sortino.toFixed(2)})`;
+  return `Sortino ratio faible (${sortino.toFixed(2)}) — volatilité à la baisse importante`;
+}
+
+export function recoveryFactorSentence(rf: number | null): string | null {
+  if (rf === null) return null;
+  if (rf > 3) return `Recovery factor solide (${rf.toFixed(2)}) — bon ratio rendement/risque`;
+  if (rf > 1) return `Recovery factor acceptable (${rf.toFixed(2)})`;
+  return `Recovery factor faible (${rf.toFixed(2)}) — PnL insuffisant par rapport au drawdown`;
+}
+
+export function riskRewardSentence(rr: number | null): string | null {
+  if (rr === null) return null;
+  if (rr >= 2) return `Risk/Reward excellent (${rr.toFixed(2)}) — gains moyens bien supérieurs aux pertes`;
+  if (rr >= 1) return `Risk/Reward correct (${rr.toFixed(2)})`;
+  return `Risk/Reward défavorable (${rr.toFixed(2)}) — avg loss > avg win`;
+}
+
+export function streakSentence(maxConsecutiveLosses: number | null): string | null {
+  if (maxConsecutiveLosses === null) return null;
+  if (maxConsecutiveLosses <= 3) return `Série max de pertes contenue (${maxConsecutiveLosses})`;
+  if (maxConsecutiveLosses <= 6) return `Série de ${maxConsecutiveLosses} pertes consécutives — risque psychologique modéré`;
+  return `Série de ${maxConsecutiveLosses} pertes consécutives — risque psychologique élevé`;
+}
+
+export function consistencySentence(score: number | null): string | null {
+  if (score === null) return null;
+  if (score >= 70) return `Consistance élevée (${score}/100) — performance régulière`;
+  if (score >= 50) return `Consistance modérée (${score}/100)`;
+  return `Consistance faible (${score}/100) — résultats irréguliers`;
+}
+
+export function significanceSentence(ttest: TTestResult | null): string | null {
+  if (!ttest) return null;
+  if (ttest.significant_1pct) return `Edge statistiquement significatif (p=${ttest.p_value.toFixed(4)}, n=${ttest.n})`;
+  if (ttest.significant_5pct) return `Edge probablement réel (p=${ttest.p_value.toFixed(4)}, n=${ttest.n})`;
+  return `Edge non significatif (p=${ttest.p_value.toFixed(4)}) — potentiellement dû au hasard`;
+}
+
+export function monteCarloSentence(mc: MonteCarloResult | null): string | null {
+  if (!mc) return null;
+  return `Monte Carlo : ${mc.pct_profitable}% de simulations rentables (IC 95% PnL : ${mc.pnl_ci_lower.toFixed(0)} à ${mc.pnl_ci_upper.toFixed(0)})`;
+}
+
+export function degradationSentence(sh: SplitHalfResult | null): string | null {
+  if (!sh) return null;
+  if (sh.status === "degrading") return `Dégradation détectée : la 2ème moitié des trades est significativement moins performante`;
+  if (sh.status === "improving") return `Tendance positive : la 2ème moitié montre une amélioration`;
+  return `Performance stable entre la 1ère et la 2ème moitié de la période`;
+}
+
 // ---- Phrases de comparaison ----
 
 const METRIC_LABELS: Record<string, string> = {
@@ -96,6 +155,11 @@ const METRIC_LABELS: Record<string, string> = {
   expectancy: "Expectancy",
   winRate: "Win Rate",
   profitFactor: "Profit Factor",
+  sharpeRatio: "Sharpe Ratio",
+  sortinoRatio: "Sortino Ratio",
+  consistencyScore: "Consistance",
+  recoveryFactor: "Recovery Factor",
+  riskRewardRatio: "Risk/Reward",
 };
 
 /**

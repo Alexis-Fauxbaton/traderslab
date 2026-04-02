@@ -166,6 +166,13 @@ export function buildRunMetrics(data) {
     bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
     sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
     periodStart: data.start_date || null, periodEnd: data.end_date || null, coveredDays,
+    sortinoRatio: m.sortino_ratio ?? null, calmarRatio: m.calmar_ratio ?? null,
+    recoveryFactor: m.recovery_factor ?? null, riskRewardRatio: m.risk_reward_ratio ?? null,
+    maxConsecutiveWins: m.max_consecutive_wins ?? null, maxConsecutiveLosses: m.max_consecutive_losses ?? null,
+    consistencyScore: m.consistency_score ?? null,
+    ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
+    splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
+    monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
   };
 }
 
@@ -199,6 +206,13 @@ export function buildVariantMetrics(variantData, aggMetrics, runs) {
     avgLoss: m.avg_loss ?? null, bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
     sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
     coveredDays, runTypes, runsCount: (runs || []).length,
+    sortinoRatio: m.sortino_ratio ?? null, calmarRatio: m.calmar_ratio ?? null,
+    recoveryFactor: m.recovery_factor ?? null, riskRewardRatio: m.risk_reward_ratio ?? null,
+    maxConsecutiveWins: m.max_consecutive_wins ?? null, maxConsecutiveLosses: m.max_consecutive_losses ?? null,
+    consistencyScore: m.consistency_score ?? null,
+    ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
+    splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
+    monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
   };
 }
 
@@ -226,5 +240,12 @@ export function buildVariantMetricsForCompare(variantData, metricsData, trades) 
     avgLoss: m.avg_loss ?? null, bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
     sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
     coveredDays, runTypes: [], runsCount: null,
+    sortinoRatio: m.sortino_ratio ?? null, calmarRatio: m.calmar_ratio ?? null,
+    recoveryFactor: m.recovery_factor ?? null, riskRewardRatio: m.risk_reward_ratio ?? null,
+    maxConsecutiveWins: m.max_consecutive_wins ?? null, maxConsecutiveLosses: m.max_consecutive_losses ?? null,
+    consistencyScore: m.consistency_score ?? null,
+    ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
+    splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
+    monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
   };
 }

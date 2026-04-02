@@ -8,6 +8,7 @@ import {
 } from '../lib/utils';
 import { Breadcrumb, Spinner, PnlSpan, DrawdownSpan, MetricCardLarge } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
+import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart, DistributionHistogram } from '../components/ProCharts';
 import { Evaluation } from '../evaluation';
 
 export default function RunDetail() {
@@ -190,6 +191,12 @@ export default function RunDetail() {
       {/* Evaluation */}
       {runEval && <EvaluationPanel result={runEval} title="Évaluation du run" />}
 
+      {/* Pro metrics */}
+      <ProMetricsGrid metrics={m} />
+
+      {/* Monthly heatmap */}
+      <MonthlyHeatmap monthlyBreakdown={m.monthly_breakdown} />
+
       {/* Equity chart */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -206,6 +213,12 @@ export default function RunDetail() {
           </div>
         </div>
         <div style={{ height: 300 }}><canvas ref={chartRef} /></div>
+      </div>
+
+      {/* Underwater + Distribution */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <UnderwaterChart underwater={m.underwater} equityCurve={m.equity_curve} />
+        <DistributionHistogram distribution={m.distribution} />
       </div>
 
       {/* Trades table — lazy loaded */}

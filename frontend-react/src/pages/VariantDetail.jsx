@@ -8,6 +8,7 @@ import {
 } from '../lib/utils';
 import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownSpan, RichDisplay, MetricCard, EmptyState } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
+import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart, DistributionHistogram } from '../components/ProCharts';
 import { Evaluation } from '../evaluation';
 import { buildVariantMetrics } from '../lib/utils';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
@@ -376,6 +377,18 @@ export default function VariantDetail({ setCompareSlotA }) {
 
       {/* Evaluation */}
       {variantEval && <EvaluationPanel result={variantEval} title="Évaluation de la variante" />}
+
+      {/* Pro metrics & charts */}
+      {aggMetrics && aggMetrics.total_trades > 0 && (
+        <>
+          <ProMetricsGrid metrics={aggMetrics} />
+          <MonthlyHeatmap monthlyBreakdown={aggMetrics.monthly_breakdown} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <UnderwaterChart underwater={aggMetrics.underwater} />
+            <DistributionHistogram distribution={aggMetrics.distribution} />
+          </div>
+        </>
+      )}
 
       {/* Runs */}
       <div className="flex items-center justify-between mb-4">

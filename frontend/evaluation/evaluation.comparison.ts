@@ -19,6 +19,7 @@ import {
   computeComparisonScore,
   hasHighSeverity,
   scoreDominanceRatio,
+  welchTTest,
 } from "./evaluation.helpers";
 import {
   strengthSentenceForWinner,
@@ -183,6 +184,17 @@ export function evaluateVariantComparison(input: ComparisonInput): ComparisonRes
   if (verdict === "promote_a" || verdict === "promote_b") actionType = "promote";
   else if (verdict === "keep_testing") actionType = "keep_testing";
 
+  // ---- 6. Test de significativité (Welch t-test sur distributions de PnL) ----
+  // Uses trade-level PnL lists if available from monthly breakdown as a proxy
+  // The welchTTest expects raw arrays — caller should pass them via the metrics
+  // For now, we compute from monthly breakdown if available
+  let significanceTest = null;
+  if (a.monthlyBreakdown && b.monthlyBreakdown && a.monthlyBreakdown.length >= 3 && b.monthlyBreakdown.length >= 3) {
+    const pnlsA = a.monthlyBreakdown.map((m) => m.pnl);
+    const pnlsB = b.monthlyBreakdown.map((m) => m.pnl);
+    significanceTest = welchTTest(pnlsA, pnlsB);
+  }
+
   return {
     verdict,
     confidence: computeConfidence(allWarnings),
@@ -197,5 +209,6 @@ export function evaluateVariantComparison(input: ComparisonInput): ComparisonRes
     nextSteps: buildComparisonNextSteps(verdict, winner, allWarnings),
     score,
     recommendedAction: { type: actionType, target: winner },
+    significanceTest,
   };
 }

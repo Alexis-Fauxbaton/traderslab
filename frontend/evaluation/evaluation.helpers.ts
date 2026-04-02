@@ -8,6 +8,9 @@ import type {
   ScoreDetail,
   ScoreResult,
   VariantMetrics,
+  RunMetrics,
+  RobustnessScore,
+  TTestResult,
 } from "./evaluation.types";
 
 // ---- Utilitaires génériques ----
@@ -33,12 +36,6 @@ export function countBySeverity(
   return warnings.filter((w) => w.severity === severity).length;
 }
 
-/**
- * Confiance globale basée sur les warnings :
- * - high warning présent      → low
- * - 2+ medium warnings        → medium
- * - sinon                     → high
- */
 export function computeConfidence(warnings: Warning[]): Confidence {
   if (hasHighSeverity(warnings)) return "low";
   if (countBySeverity(warnings, "medium") >= 2) return "medium";
@@ -63,13 +60,117 @@ export function isDrawdownAcceptable(
   return Math.abs(maxDrawdown) < threshold;
 }
 
-// ---- Scoring pour la comparaison ----
+// ---- Score de robustesse (0-100) ----
 
 /**
- * Compare une métrique entre A et B.
- * Retourne le gain de points pour chaque côté selon le poids.
- * Si l'une des valeurs est null → winner = "n/a", aucun point.
+ * Score composite de robustesse :
+ *   - Consistance mensuelle (0-30 pts)
+ *   - Recovery factor (0-20 pts)
+ *   - Risk/Reward ratio (0-15 pts)
+ *   - Taille d'échantillon (0-15 pts)
+ *   - Significativité statistique (0-20 pts)
  */
+export function computeRobustnessScore(
+  metrics: RunMetrics | VariantMetrics
+): RobustnessScore | null {
+  if (metrics.tradeCount < 5) return null;
+
+  // 1. Consistance (0-30) — basé sur consistency_score (0-100) du backend
+  let consistencyPart = 0;
+  if (metrics.consistencyScore !== null) {
+    consistencyPart = Math.round((metrics.consistencyScore / 100) * 30);
+  }
+
+  // 2. Recovery factor (0-20) — 0 si négatif, 20 si >= 3
+  let recoveryPart = 0;
+  if (metrics.recoveryFactor !== null && metrics.recoveryFactor > 0) {
+    recoveryPart = Math.round(Math.min(1, metrics.recoveryFactor / 3) * 20);
+  }
+
+  // 3. Risk/Reward (0-15) — 0 si < 0.5, 15 si >= 2
+  let riskRewardPart = 0;
+  if (metrics.riskRewardRatio !== null && metrics.riskRewardRatio > 0.5) {
+    const normalized = Math.min(1, (metrics.riskRewardRatio - 0.5) / 1.5);
+    riskRewardPart = Math.round(normalized * 15);
+  }
+
+  // 4. Taille d'échantillon (0-15) — 0 si <10 trades, 15 si >=100
+  let sampleSizePart = 0;
+  if (metrics.tradeCount >= 10) {
+    const normalized = Math.min(1, (metrics.tradeCount - 10) / 90);
+    sampleSizePart = Math.round(normalized * 15);
+  }
+
+  // 5. Significativité (0-20) — basé sur p-value du t-test
+  let significancePart = 0;
+  if (metrics.ttest) {
+    if (metrics.ttest.significant_1pct) {
+      significancePart = 20;
+    } else if (metrics.ttest.significant_5pct) {
+      significancePart = 14;
+    } else if (metrics.ttest.p_value < 0.1) {
+      significancePart = 8;
+    }
+  }
+
+  const total = Math.min(100, consistencyPart + recoveryPart + riskRewardPart + sampleSizePart + significancePart);
+
+  return {
+    total,
+    consistencyPart,
+    recoveryPart,
+    riskRewardPart,
+    sampleSizePart,
+    significancePart,
+  };
+}
+
+// ---- Welch t-test pour 2 distributions ----
+
+export function welchTTest(
+  pnlsA: number[],
+  pnlsB: number[]
+): TTestResult | null {
+  const nA = pnlsA.length;
+  const nB = pnlsB.length;
+  if (nA < 5 || nB < 5) return null;
+
+  const meanA = pnlsA.reduce((a, b) => a + b, 0) / nA;
+  const meanB = pnlsB.reduce((a, b) => a + b, 0) / nB;
+  const varA = pnlsA.reduce((s, p) => s + (p - meanA) ** 2, 0) / (nA - 1);
+  const varB = pnlsB.reduce((s, p) => s + (p - meanB) ** 2, 0) / (nB - 1);
+
+  const seA = varA / nA;
+  const seB = varB / nB;
+  const se = Math.sqrt(seA + seB);
+  if (se === 0) return null;
+
+  const tStat = (meanA - meanB) / se;
+
+  // Approximate p-value using normal distribution (adequate for n>=30, acceptable for small n)
+  const z = Math.abs(tStat);
+  // erfc approximation
+  const pValue = 0.5 * erfc(z / Math.SQRT2);
+
+  return {
+    t_statistic: Math.round(tStat * 10000) / 10000,
+    p_value: Math.round(pValue * 1000000) / 1000000,
+    significant_5pct: pValue < 0.05,
+    significant_1pct: pValue < 0.01,
+    n: nA + nB,
+  };
+}
+
+function erfc(x: number): number {
+  // Abramowitz & Stegun approximation
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+  const result = poly * Math.exp(-x * x);
+  return x >= 0 ? result : 2 - result;
+}
+
+// ---- Scoring pour la comparaison ----
+
 function compareMetric(
   a: number | null,
   b: number | null,
@@ -90,14 +191,18 @@ function compareMetric(
 }
 
 /**
- * Calcule le score de comparaison pondéré entre deux variantes.
+ * Scoring enrichi sur 18 pts (anciennement 9 pts) :
  *
- * Pondérations :
- *   pnl          → 3 pts  (plus élevé = mieux)
- *   maxDrawdown  → 2 pts  (valeur absolue plus faible = mieux)
- *   expectancy   → 2 pts  (plus élevé = mieux)
- *   winRate      → 1 pt   (plus élevé = mieux)
- *   profitFactor → 1 pt   (plus élevé = mieux)
+ *   pnl              → 3 pts
+ *   maxDrawdown      → 2 pts
+ *   expectancy       → 2 pts
+ *   winRate          → 1 pt
+ *   profitFactor     → 1 pt
+ *   sharpeRatio      → 2 pts  (NEW)
+ *   sortinoRatio     → 2 pts  (NEW)
+ *   consistencyScore → 2 pts  (NEW)
+ *   recoveryFactor   → 1.5 pts (NEW)
+ *   riskRewardRatio  → 1.5 pts (NEW)
  */
 export function computeComparisonScore(
   a: VariantMetrics,
@@ -109,6 +214,11 @@ export function computeComparisonScore(
     compareMetric(a.expectancy, b.expectancy, true, "expectancy", 2),
     compareMetric(a.winRate, b.winRate, true, "winRate", 1),
     compareMetric(a.profitFactor, b.profitFactor, true, "profitFactor", 1),
+    compareMetric(a.sharpeRatio, b.sharpeRatio, true, "sharpeRatio", 2),
+    compareMetric(a.sortinoRatio, b.sortinoRatio, true, "sortinoRatio", 2),
+    compareMetric(a.consistencyScore, b.consistencyScore, true, "consistencyScore", 2),
+    compareMetric(a.recoveryFactor, b.recoveryFactor, true, "recoveryFactor", 1.5),
+    compareMetric(a.riskRewardRatio, b.riskRewardRatio, true, "riskRewardRatio", 1.5),
   ];
 
   const scoreA = details.reduce((acc, d) => acc + d.gainA, 0);
@@ -121,10 +231,6 @@ export function computeComparisonScore(
   return { scoreA, scoreB, total, details };
 }
 
-/**
- * Ratio de dominance : à quel point le gagnant domine-t-il ?
- * Retourne un nombre entre 0 et 1 (0 = égalité, 1 = dominance totale).
- */
 export function scoreDominanceRatio(
   scoreA: number,
   scoreB: number,

@@ -43,6 +43,20 @@ const goodRun: RunMetrics = {
   periodStart: "2025-01-01",
   periodEnd: "2025-03-31",
   coveredDays: 90,
+  sharpeRatio: 2.1,
+  sortinoRatio: 3.2,
+  calmarRatio: 4.5,
+  recoveryFactor: 2.8,
+  riskRewardRatio: 1.89,
+  maxConsecutiveWins: 8,
+  maxConsecutiveLosses: 3,
+  consistencyScore: 72,
+  ttest: { t_statistic: 2.8, p_value: 0.003, significant_5pct: true, significant_1pct: true, n: 80 },
+  monteCarlo: { pnl_median: 2300, pnl_ci_lower: 800, pnl_ci_upper: 4200, max_dd_median: 350, max_dd_ci_lower: 120, max_dd_ci_upper: 750, pct_profitable: 88, n_simulations: 1000 },
+  splitHalf: { first_half: { pnl: 1200, win_rate: 0.64, profit_factor: 2.0, expectancy: 30, trades: 40 }, second_half: { pnl: 1200, win_rate: 0.66, profit_factor: 2.2, expectancy: 30, trades: 40 }, status: "stable", degradation_signals: 0 },
+  distribution: null,
+  monthlyBreakdown: null,
+  underwater: null,
 };
 
 const smallRun: RunMetrics = {
@@ -106,6 +120,20 @@ const goodVariant: VariantMetrics = {
   coveredDays: 180,
   runTypes: ["backtest"],
   runsCount: 3,
+  sharpeRatio: 1.8,
+  sortinoRatio: 2.5,
+  calmarRatio: 3.0,
+  recoveryFactor: 2.2,
+  riskRewardRatio: 1.8,
+  maxConsecutiveWins: 7,
+  maxConsecutiveLosses: 4,
+  consistencyScore: 65,
+  ttest: { t_statistic: 2.5, p_value: 0.007, significant_5pct: true, significant_1pct: true, n: 120 },
+  monteCarlo: { pnl_median: 4000, pnl_ci_lower: 1500, pnl_ci_upper: 7000, max_dd_median: 500, max_dd_ci_lower: 200, max_dd_ci_upper: 1000, pct_profitable: 85, n_simulations: 1000 },
+  splitHalf: { first_half: { pnl: 2100, win_rate: 0.61, profit_factor: 1.8, expectancy: 35, trades: 60 }, second_half: { pnl: 2100, win_rate: 0.63, profit_factor: 2.0, expectancy: 35, trades: 60 }, status: "stable", degradation_signals: 0 },
+  distribution: null,
+  monthlyBreakdown: [{ month: "2025-01", pnl: 700, trades: 20 }, { month: "2025-02", pnl: 600, trades: 20 }, { month: "2025-03", pnl: 800, trades: 20 }, { month: "2025-04", pnl: 700, trades: 20 }, { month: "2025-05", pnl: 600, trades: 20 }, { month: "2025-06", pnl: 800, trades: 20 }],
+  underwater: null,
 };
 
 const emptyVariant: VariantMetrics = {
