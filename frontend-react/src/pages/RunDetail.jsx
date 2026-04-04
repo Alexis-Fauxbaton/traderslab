@@ -4,12 +4,10 @@ import { Chart } from 'chart.js';
 import API from '../lib/api';
 import {
   formatDate, formatDateTime, formatPercent, setCurrentAvgLoss, getUnitSettings,
-  buildRunMetrics,
 } from '../lib/utils';
 import { Breadcrumb, Spinner, PnlSpan, DrawdownSpan, MetricCardLarge } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart } from '../components/ProCharts';
-import { Evaluation } from '../evaluation';
 
 export default function RunDetail() {
   const { id } = useParams();
@@ -26,6 +24,7 @@ export default function RunDetail() {
   const [stratId, setStratId] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
   const [ddHighlight, setDdHighlight] = useState(false);
+  const [runEval, setRunEval] = useState(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -129,18 +128,25 @@ export default function RunDetail() {
     }
   }, [ddHighlight]);
 
+  // Fetch V1 analysis from backend
+  useEffect(() => {
+    if (!data?.metrics?.total_trades) { setRunEval(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const analysis = await API.get('/analysis/run/' + id);
+        if (!cancelled) setRunEval(analysis);
+      } catch { if (!cancelled) setRunEval(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [id, data?.metrics?.total_trades]);
+
   if (!data) return <Spinner />;
 
   const m = data.metrics || {};
   const _unitSettings = getUnitSettings();
   setCurrentAvgLoss(m.avg_loss);
   const _ddPeak = _unitSettings.initial_balance + (m.dd_peak_equity || 0);
-
-  // Evaluation
-  let runEval = null;
-  if (Evaluation && m.total_trades !== undefined) {
-    try { runEval = Evaluation.evaluateRun(buildRunMetrics(data)); } catch {}
-  }
 
   const handleDelete = async () => {
     if (!confirm('Supprimer ce run ?')) return;

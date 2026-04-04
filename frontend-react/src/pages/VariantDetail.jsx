@@ -9,8 +9,6 @@ import {
 import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownSpan, RichDisplay, MetricCard, EmptyState } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart } from '../components/ProCharts';
-import { Evaluation } from '../evaluation';
-import { buildVariantMetrics } from '../lib/utils';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
 
 function LineageTree({ node, currentId, depth = 0 }) {
@@ -162,6 +160,7 @@ export default function VariantDetail({ setCompareSlotA }) {
   const [showEdit, setShowEdit] = useState(false);
   const [showDuplicate, setShowDuplicate] = useState(false);
   const [textFieldsOpen, setTextFieldsOpen] = useState(false);
+  const [variantEval, setVariantEval] = useState(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -191,6 +190,17 @@ export default function VariantDetail({ setCompareSlotA }) {
     })();
   }, [id]);
 
+  // Fetch V1 analysis from backend
+  useEffect(() => {
+    if (!aggMetrics || !aggMetrics.total_trades) { setVariantEval(null); return; }
+    (async () => {
+      try {
+        const analysis = await API.get('/analysis/variant/' + id);
+        setVariantEval(analysis);
+      } catch { setVariantEval(null); }
+    })();
+  }, [id, aggMetrics]);
+
   if (!data) return <Spinner />;
 
   const isRoot = !data.parent_variant_id;
@@ -200,15 +210,6 @@ export default function VariantDetail({ setCompareSlotA }) {
   const handleFieldUpdate = (field, newVal) => {
     setData(prev => ({ ...prev, [field]: newVal }));
   };
-
-  // Evaluation
-  let variantEval = null;
-  if (Evaluation && aggMetrics && aggMetrics.total_trades > 0) {
-    try {
-      const vm = buildVariantMetrics(data, aggMetrics, data.runs || []);
-      if (vm) variantEval = Evaluation.evaluateVariant(vm);
-    } catch {}
-  }
 
   if (aggMetrics) setCurrentAvgLoss(aggMetrics.avg_loss);
   const ddPeak = _unitSettings.initial_balance + (aggMetrics?.dd_peak_equity || 0);

@@ -7,11 +7,10 @@ import API from '../lib/api';
 import { useSidebar } from '../hooks/useSidebar';
 import {
   formatDate, formatPercent, setCurrentAvgLoss, getUnitSettings,
-  STATUS_LABELS, buildVariantMetricsForCompare,
+  STATUS_LABELS,
 } from '../lib/utils';
 import { Spinner, StatusBadge, PnlSpan, DrawdownSpan } from '../components/UI';
 import { ComparisonEvaluationPanel } from '../components/EvaluationPanel';
-import { Evaluation } from '../evaluation';
 
 // Temporal analysis helpers
 function getBucketKey(dateStr, granularity) {
@@ -97,6 +96,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
   const [loading, setLoading] = useState(false);
   const [periodMode, setPeriodMode] = useState('common');
   const [granularity, setGranularity] = useState('month');
+  const [compEval, setCompEval] = useState(null);
   // Refs for charts
   const compareChartRef = useRef(null);
   const compareChartInstance = useRef(null);
@@ -313,18 +313,18 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
     { key: 'sharpe_ratio', label: 'Sharpe (ann.)', fmt: 'num' },
   ];
 
-  // Comparison evaluation
-  let compEval = null;
-  if (compData && Evaluation) {
-    const a = compData.variant_a, b = compData.variant_b;
-    const ma = a.latest_run?.metrics || {}, mb = b.latest_run?.metrics || {};
-    try {
-      const _tA = a.latest_run?.trades || [], _tB = b.latest_run?.trades || [];
-      const _vmA = buildVariantMetricsForCompare(a, a.latest_run ? { ...ma, trade_pnls: a.latest_run?.trade_pnls } : null, _tA);
-      const _vmB = buildVariantMetricsForCompare(b, b.latest_run ? { ...mb, trade_pnls: b.latest_run?.trade_pnls } : null, _tB);
-      if (_vmA && _vmB) compEval = Evaluation.evaluateVariantComparison({ variantA: _vmA, variantB: _vmB });
-    } catch {}
-  }
+  // Fetch V1 comparison analysis from backend
+  useEffect(() => {
+    if (!slotA || !slotB || !compData) { setCompEval(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const analysis = await API.get('/analysis/compare?variant_a=' + slotA.id + '&variant_b=' + slotB.id);
+        if (!cancelled) setCompEval(analysis);
+      } catch { if (!cancelled) setCompEval(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [compData, slotA?.id, slotB?.id]);
 
   return (
     <div className="fade-in">
@@ -453,7 +453,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                 </div>
 
                 {/* Comparison evaluation */}
-                {compEval && <ComparisonEvaluationPanel result={compEval} nameA={a.name} nameB={b.name} />}
+                {compEval && <ComparisonEvaluationPanel result={compEval} />}
 
                 {/* Equity curves */}
                 <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">

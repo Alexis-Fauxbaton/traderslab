@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database import engine, Base, run_migrations, SessionLocal
-from routers import strategies, variants, runs, compare
+from routers import strategies, variants, runs, compare, analysis
 
 # Création des tables au démarrage
 Base.metadata.create_all(bind=engine)
@@ -30,6 +30,7 @@ app.include_router(strategies.router)
 app.include_router(variants.router)
 app.include_router(runs.router)
 app.include_router(compare.router)
+app.include_router(analysis.router)
 
 
 @app.on_event("startup")
