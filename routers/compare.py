@@ -52,6 +52,9 @@ def _get_all_runs_aggregated_data(
         for t in trades
     ]
 
+    # PnL bruts par trade pour tests statistiques (t-test, etc.)
+    trade_pnls = [round(t.pnl, 2) for t in trades]
+
     n = len(runs)
     return {
         "run_id": None,
@@ -59,6 +62,7 @@ def _get_all_runs_aggregated_data(
         "metrics": metrics,
         "equity_curve": equity_curve,
         "trades": trade_points,
+        "trade_pnls": trade_pnls,
     }
 
 
@@ -66,9 +70,16 @@ def _get_all_runs_aggregated_data(
 _HIGHER_IS_BETTER = {
     "total_pnl", "win_rate", "profit_factor", "expectancy",
     "avg_win", "best_trade", "total_trades", "sharpe_ratio",
+    "sortino_ratio", "calmar_ratio", "recovery_factor",
+    "risk_reward_ratio", "consistency_score", "max_consecutive_wins",
 }
 # Métriques où une valeur plus basse (en valeur absolue) est meilleure
-_LOWER_IS_BETTER = {"max_drawdown", "worst_trade", "avg_loss"}
+_LOWER_IS_BETTER = {"max_drawdown", "worst_trade", "avg_loss", "max_consecutive_losses"}
+# Clés à exclure du diff (structures complexes, non-numériques)
+_DIFF_EXCLUDE = {
+    "equity_curve", "monthly_breakdown", "underwater",
+    "distribution", "ttest", "monte_carlo", "split_half",
+}
 
 
 def _build_diff(metrics_a: dict | None, metrics_b: dict | None) -> dict[str, str]:
@@ -80,7 +91,7 @@ def _build_diff(metrics_a: dict | None, metrics_b: dict | None) -> dict[str, str
     all_keys = set(metrics_a.keys()) | set(metrics_b.keys())
 
     for key in all_keys:
-        if key == "equity_curve":
+        if key in _DIFF_EXCLUDE:
             continue
         val_a = metrics_a.get(key)
         val_b = metrics_b.get(key)

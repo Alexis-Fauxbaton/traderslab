@@ -130,14 +130,14 @@ export function consistencySentence(score: number | null): string | null {
 
 export function significanceSentence(ttest: TTestResult | null): string | null {
   if (!ttest) return null;
-  if (ttest.significant_1pct) return `Edge statistiquement significatif (p=${ttest.p_value.toFixed(4)}, n=${ttest.n})`;
-  if (ttest.significant_5pct) return `Edge probablement réel (p=${ttest.p_value.toFixed(4)}, n=${ttest.n})`;
+  if (ttest.significant_1pct) return `Edge statistiquement significatif (p=${ttest.p_value.toFixed(4)}, n=${ttest.n}) — approximation normale`;
+  if (ttest.significant_5pct) return `Edge probablement réel (p=${ttest.p_value.toFixed(4)}, n=${ttest.n}) — approximation normale`;
   return `Edge non significatif (p=${ttest.p_value.toFixed(4)}) — potentiellement dû au hasard`;
 }
 
 export function monteCarloSentence(mc: MonteCarloResult | null): string | null {
   if (!mc) return null;
-  return `Monte Carlo : ${mc.pct_profitable}% de simulations rentables (IC 95% PnL : ${mc.pnl_ci_lower.toFixed(0)} à ${mc.pnl_ci_upper.toFixed(0)})`;
+  return `Monte Carlo (bootstrap) : ${mc.pct_profitable}% de simulations rentables (IC 95% PnL : ${mc.pnl_ci_lower.toFixed(0)} à ${mc.pnl_ci_upper.toFixed(0)}) — basé sur PnL bruts`;
 }
 
 export function degradationSentence(sh: SplitHalfResult | null): string | null {

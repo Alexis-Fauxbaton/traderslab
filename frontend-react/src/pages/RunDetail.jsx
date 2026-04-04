@@ -8,7 +8,7 @@ import {
 } from '../lib/utils';
 import { Breadcrumb, Spinner, PnlSpan, DrawdownSpan, MetricCardLarge } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
-import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart, DistributionHistogram } from '../components/ProCharts';
+import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart } from '../components/ProCharts';
 import { Evaluation } from '../evaluation';
 
 export default function RunDetail() {
@@ -215,11 +215,8 @@ export default function RunDetail() {
         <div style={{ height: 300 }}><canvas ref={chartRef} /></div>
       </div>
 
-      {/* Underwater + Distribution */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <UnderwaterChart underwater={m.underwater} equityCurve={m.equity_curve} />
-        <DistributionHistogram distribution={m.distribution} />
-      </div>
+      {/* Underwater */}
+      <UnderwaterChart underwater={m.underwater} equityCurve={m.equity_curve} />
 
       {/* Trades table — lazy loaded */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">

@@ -185,11 +185,11 @@ export function evaluateVariantComparison(input: ComparisonInput): ComparisonRes
   else if (verdict === "keep_testing") actionType = "keep_testing";
 
   // ---- 6. Test de significativité (Welch t-test sur distributions de PnL) ----
-  // Uses trade-level PnL lists if available from monthly breakdown as a proxy
-  // The welchTTest expects raw arrays — caller should pass them via the metrics
-  // For now, we compute from monthly breakdown if available
+  // Prefer trade-level PnLs when available; fall back to monthly breakdown as proxy
   let significanceTest = null;
-  if (a.monthlyBreakdown && b.monthlyBreakdown && a.monthlyBreakdown.length >= 3 && b.monthlyBreakdown.length >= 3) {
+  if (a.tradePnls && b.tradePnls && a.tradePnls.length >= 5 && b.tradePnls.length >= 5) {
+    significanceTest = welchTTest(a.tradePnls, b.tradePnls);
+  } else if (a.monthlyBreakdown && b.monthlyBreakdown && a.monthlyBreakdown.length >= 3 && b.monthlyBreakdown.length >= 3) {
     const pnlsA = a.monthlyBreakdown.map((m) => m.pnl);
     const pnlsB = b.monthlyBreakdown.map((m) => m.pnl);
     significanceTest = welchTTest(pnlsA, pnlsB);

@@ -24,6 +24,35 @@ def _downsample(points: list, max_pts: int = MAX_EQUITY_POINTS) -> list:
     return [points[i] for i in dict.fromkeys(indices)]
 
 
+# Clés « Pro » ajoutées après le MVP — servent de sentinelle pour la migration lazy.
+_PRO_METRIC_KEYS = {"consistency_score", "ttest", "monte_carlo", "split_half", "sortino_ratio"}
+
+
+def _run_metrics_stale(metrics: dict | None) -> bool:
+    """Retourne True si les métriques d'un run ne contiennent pas les clés Pro."""
+    if not metrics:
+        return True
+    return not _PRO_METRIC_KEYS.issubset(metrics.keys())
+
+
+def recompute_run_metrics(run_id: str, db: Session) -> dict | None:
+    """Recalcule et persiste les métriques d'un run individuel."""
+    trades = (
+        db.query(Trade)
+        .filter(Trade.run_id == run_id)
+        .order_by(Trade.close_time)
+        .all()
+    )
+    trades_data = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades]
+    metrics = compute_metrics(trades_data) if trades_data else None
+
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if run and metrics:
+        run.metrics = metrics
+        db.flush()
+    return metrics
+
+
 def recompute_variant_metrics(variant_id: str, db: Session) -> dict | None:
     """Recalcule et persiste les métriques agrégées d'une variante. Retourne les métriques."""
     trades = (
@@ -105,7 +134,14 @@ def backfill_all_metrics(db: Session) -> int:
             recompute_strategy_metrics(s.id, db)
             updated += 1
 
+    # --- Backfill des runs dont les métriques sont obsolètes ---
+    runs = db.query(Run).filter(Run.metrics.isnot(None)).all()
+    for r in runs:
+        if _run_metrics_stale(r.metrics):
+            recompute_run_metrics(r.id, db)
+            updated += 1
+
     if updated:
         db.commit()
-        logger.info("Backfill: %d aggregate metrics computed", updated)
+        logger.info("Backfill: %d metrics recomputed", updated)
     return updated

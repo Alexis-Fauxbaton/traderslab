@@ -320,8 +320,8 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
     const ma = a.latest_run?.metrics || {}, mb = b.latest_run?.metrics || {};
     try {
       const _tA = a.latest_run?.trades || [], _tB = b.latest_run?.trades || [];
-      const _vmA = buildVariantMetricsForCompare(a, a.latest_run ? ma : null, _tA);
-      const _vmB = buildVariantMetricsForCompare(b, b.latest_run ? mb : null, _tB);
+      const _vmA = buildVariantMetricsForCompare(a, a.latest_run ? { ...ma, trade_pnls: a.latest_run?.trade_pnls } : null, _tA);
+      const _vmB = buildVariantMetricsForCompare(b, b.latest_run ? { ...mb, trade_pnls: b.latest_run?.trade_pnls } : null, _tB);
       if (_vmA && _vmB) compEval = Evaluation.evaluateVariantComparison({ variantA: _vmA, variantB: _vmB });
     } catch {}
   }

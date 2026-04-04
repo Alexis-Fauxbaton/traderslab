@@ -338,6 +338,7 @@ def compute_metrics(trades: list[dict]) -> dict:
             "win_rate": 0.0,
             "profit_factor": None,
             "max_drawdown": 0.0,
+            "max_drawdown_pct": None,
             "dd_peak_equity": 0.0,
             "dd_start_idx": 0,
             "dd_end_idx": 0,
@@ -426,6 +427,12 @@ def compute_metrics(trades: list[dict]) -> dict:
             dd_start_idx = peak_idx
             dd_end_idx = i
 
+    # Max drawdown en pourcentage du pic d'equity (ratio négatif, ex: -0.07 = 7%)
+    # Si le pic est à 0 (equity jamais positive), le ratio n'est pas calculable.
+    max_drawdown_pct = None
+    if dd_peak > 0 and max_drawdown > 0:
+        max_drawdown_pct = round(-(max_drawdown / dd_peak), 4)
+
     # ---- Nouvelles métriques Pro ----
     streaks = _compute_streaks(pnls)
     monthly_breakdown = _compute_monthly_breakdown(sorted_trades)
@@ -461,6 +468,7 @@ def compute_metrics(trades: list[dict]) -> dict:
         "win_rate": round(win_rate, 4),
         "profit_factor": round(profit_factor, 4) if profit_factor is not None else None,
         "max_drawdown": round(max_drawdown, 2),
+        "max_drawdown_pct": max_drawdown_pct,
         "dd_peak_equity": round(dd_peak, 2),
         "dd_start_idx": dd_start_idx,
         "dd_end_idx": dd_end_idx,

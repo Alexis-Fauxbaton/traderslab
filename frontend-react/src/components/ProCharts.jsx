@@ -131,83 +131,13 @@ export function UnderwaterChart({ underwater, equityCurve }) {
 }
 
 /**
- * Distribution Histogram — PnL trade distribution.
- * Props: distribution = { skewness, kurtosis, histogram: [{ bin_start, bin_end, count }, ...] }
- */
-export function DistributionHistogram({ distribution }) {
-  const canvasRef = useRef(null);
-  const chartRef = useRef(null);
-
-  useEffect(() => {
-    if (!distribution?.histogram?.length) return;
-    if (!canvasRef.current) return;
-    if (chartRef.current) chartRef.current.destroy();
-
-    const bins = distribution.histogram;
-    const labels = bins.map(b => `${b.bin_start.toFixed(0)}`);
-    const data = bins.map(b => b.count);
-    const colors = bins.map(b => {
-      const mid = (b.bin_start + b.bin_end) / 2;
-      return mid >= 0 ? 'rgba(34, 197, 94, 0.6)' : 'rgba(239, 68, 68, 0.6)';
-    });
-
-    chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Trades',
-          data,
-          backgroundColor: colors,
-          borderWidth: 0,
-          borderRadius: 2,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#94a3b8', maxRotation: 45, autoSkip: true, maxTicksLimit: 15 }, grid: { display: false } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-        },
-      },
-    });
-
-    return () => { if (chartRef.current) chartRef.current.destroy(); };
-  }, [distribution]);
-
-  if (!distribution?.histogram?.length) return null;
-
-  return (
-    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Distribution des PnL</h3>
-        <div className="flex gap-3 text-xs text-slate-500">
-          {distribution.skewness != null && <span>Skew: <span className="text-slate-300">{distribution.skewness.toFixed(2)}</span></span>}
-          {distribution.kurtosis != null && <span>Kurt: <span className="text-slate-300">{distribution.kurtosis.toFixed(2)}</span></span>}
-        </div>
-      </div>
-      <div style={{ height: 200 }}><canvas ref={canvasRef} /></div>
-      <div className="mt-2 text-[11px] text-slate-600">
-        {distribution.skewness != null && distribution.skewness > 0.5 && '📈 Distribution asymétrique positive (queue de gains longs)'}
-        {distribution.skewness != null && distribution.skewness < -0.5 && '⚠️ Distribution asymétrique négative (queue de pertes longues)'}
-        {distribution.kurtosis != null && distribution.kurtosis > 1 && ' · Fat tails détectées (risque de valeurs extrêmes)'}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Pro Metrics Grid — 2x3 grid of extra metric cards.
+ * Pro Metrics Grid — key metric cards for traders.
  * Props: metrics = the backend metrics object
  */
 export function ProMetricsGrid({ metrics }) {
   if (!metrics) return null;
   const m = metrics;
   const cards = [
-    { label: 'Sortino Ratio', value: m.sortino_ratio, fmt: v => v?.toFixed(2) ?? '—' },
-    { label: 'Calmar Ratio', value: m.calmar_ratio, fmt: v => v?.toFixed(2) ?? '—' },
     { label: 'Recovery Factor', value: m.recovery_factor, fmt: v => v?.toFixed(2) ?? '—' },
     { label: 'Risk/Reward', value: m.risk_reward_ratio, fmt: v => v?.toFixed(2) ?? '—' },
     { label: 'Max Win Streak', value: m.max_consecutive_wins, fmt: v => v ?? '—' },

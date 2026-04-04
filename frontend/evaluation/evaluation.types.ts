@@ -135,6 +135,8 @@ export interface VariantMetrics {
   distribution: DistributionStats | null;
   monthlyBreakdown: MonthlyBreakdown[] | null;
   underwater: number[] | null;
+  /** Raw trade-level PnLs for statistical tests (optional, from compare endpoint) */
+  tradePnls: number[] | null;
 }
 
 export interface ComparisonInput {
@@ -185,15 +187,6 @@ export interface RecommendedComparisonAction {
   target: WinnerSide;
 }
 
-export interface RobustnessScore {
-  total: number;              // 0-100
-  consistencyPart: number;    // 0-30
-  recoveryPart: number;       // 0-20
-  riskRewardPart: number;     // 0-15
-  sampleSizePart: number;     // 0-15
-  significancePart: number;   // 0-20
-}
-
 export interface EvaluationResult {
   verdict: Verdict;
   confidence: Confidence;
@@ -204,10 +197,7 @@ export interface EvaluationResult {
   warnings: Warning[];
   nextSteps: string[];
   recommendedAction: RecommendedRunAction | RecommendedVariantAction;
-  robustness: RobustnessScore | null;
   degradation: SplitHalfResult | null;
-  monteCarlo: MonteCarloResult | null;
-  significance: TTestResult | null;
 }
 
 export interface ComparisonResult {

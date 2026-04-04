@@ -4,8 +4,9 @@
  * Expose : window.Evaluation = { evaluateRun, evaluateVariant, evaluateVariantComparison,
  *                                 verdictLabel, confidenceLabel, comparisonVerdictLabel }
  *
- * Version Pro — inclut : robustesse, Monte Carlo, dégradation, significativité,
- *                        Sortino, Calmar, Recovery Factor, Risk/Reward, streaks, consistance
+ * V1 — métriques claires et actionnables pour un trader :
+ *   Recovery Factor, Risk/Reward, streaks, consistance, split-half (dégradation),
+ *   Sharpe, warnings de qualité des données.
  */
 (function (global) {
   'use strict';
@@ -39,59 +40,7 @@
   }
 
   // ============================================================
-  // SCORE DE ROBUSTESSE (0-100)
-  // ============================================================
-
-  function computeRobustnessScore(metrics) {
-    if (metrics.tradeCount < 5) return null;
-
-    var consistencyPart = 0;
-    if (metrics.consistencyScore !== null && metrics.consistencyScore !== undefined) {
-      consistencyPart = Math.round((metrics.consistencyScore / 100) * 30);
-    }
-
-    var recoveryPart = 0;
-    if (metrics.recoveryFactor !== null && metrics.recoveryFactor !== undefined && metrics.recoveryFactor > 0) {
-      recoveryPart = Math.round(Math.min(1, metrics.recoveryFactor / 3) * 20);
-    }
-
-    var riskRewardPart = 0;
-    if (metrics.riskRewardRatio !== null && metrics.riskRewardRatio !== undefined && metrics.riskRewardRatio > 0.5) {
-      var normalized = Math.min(1, (metrics.riskRewardRatio - 0.5) / 1.5);
-      riskRewardPart = Math.round(normalized * 15);
-    }
-
-    var sampleSizePart = 0;
-    if (metrics.tradeCount >= 10) {
-      var normalized2 = Math.min(1, (metrics.tradeCount - 10) / 90);
-      sampleSizePart = Math.round(normalized2 * 15);
-    }
-
-    var significancePart = 0;
-    if (metrics.ttest) {
-      if (metrics.ttest.significant_1pct) {
-        significancePart = 20;
-      } else if (metrics.ttest.significant_5pct) {
-        significancePart = 14;
-      } else if (metrics.ttest.p_value < 0.1) {
-        significancePart = 8;
-      }
-    }
-
-    var total = Math.min(100, consistencyPart + recoveryPart + riskRewardPart + sampleSizePart + significancePart);
-
-    return {
-      total: total,
-      consistencyPart: consistencyPart,
-      recoveryPart: recoveryPart,
-      riskRewardPart: riskRewardPart,
-      sampleSizePart: sampleSizePart,
-      significancePart: significancePart
-    };
-  }
-
-  // ============================================================
-  // WELCH T-TEST
+  // WELCH T-TEST (used for comparison only)
   // ============================================================
 
   function erfc(x) {
@@ -137,7 +86,7 @@
   }
 
   // ============================================================
-  // SCORE DE COMPARAISON (18 pts)
+  // SCORE DE COMPARAISON
   // ============================================================
 
   function compareMetric(a, b, higherIsBetter, metric, weight) {
@@ -161,7 +110,6 @@
       compareMetric(a.winRate, b.winRate, true, 'winRate', 1),
       compareMetric(a.profitFactor, b.profitFactor, true, 'profitFactor', 1),
       compareMetric(a.sharpeRatio, b.sharpeRatio, true, 'sharpeRatio', 2),
-      compareMetric(a.sortinoRatio, b.sortinoRatio, true, 'sortinoRatio', 2),
       compareMetric(a.consistencyScore, b.consistencyScore, true, 'consistencyScore', 2),
       compareMetric(a.recoveryFactor, b.recoveryFactor, true, 'recoveryFactor', 1.5),
       compareMetric(a.riskRewardRatio, b.riskRewardRatio, true, 'riskRewardRatio', 1.5),
@@ -181,24 +129,13 @@
   // WARNINGS
   // ============================================================
 
-  function warnNoTrades(tradeCount, target) {
-    if (tradeCount === 0) {
-      return {
-        code: 'NO_TRADES', severity: 'high', title: 'Aucun trade',
-        message: "Ce jeu de données ne contient aucun trade — évaluation impossible.",
-        target: target,
-      };
-    }
-    return null;
-  }
-
   function warnSmallSample(tradeCount, target, minimum) {
     minimum = minimum !== undefined ? minimum : 30;
     if (tradeCount > 0 && tradeCount < minimum) {
       return {
         code: 'SMALL_SAMPLE', severity: 'high', title: 'Échantillon trop faible',
         message: "Seulement " + tradeCount + " trade" + (tradeCount > 1 ? 's' : '') +
-          " — les conclusions statistiques sont fragiles (minimum recommandé : " + minimum + ").",
+          " — les conclusions sont fragiles (minimum recommandé : " + minimum + ").",
         target: target,
       };
     }
@@ -211,7 +148,7 @@
       return {
         code: 'SHORT_PERIOD', severity: 'medium', title: 'Période trop courte',
         message: "Période couverte : " + coveredDays + " jour" + (coveredDays > 1 ? "s" : "") +
-          ". Au moins " + minimum + " jours sont recommandés pour limiter les biais de séquence.",
+          ". Au moins " + minimum + " jours sont recommandés.",
         target: target,
       };
     }
@@ -239,7 +176,7 @@
         return {
           code: 'SINGLE_TRADE_DOMINANCE', severity: 'high', title: 'Performance concentrée sur un trade',
           message: "Le meilleur trade représente " + Math.round(ratio * 100) +
-            "% du total des gains. La performance dépend fortement d'un seul trade gagnant.",
+            "% du total des gains. La performance dépend fortement d'un seul trade.",
           target: target,
         };
       }
@@ -251,14 +188,14 @@
     if (totalNegativePnl !== null && totalNegativePnl !== undefined && totalNegativePnl === 0) {
       return {
         code: 'PF_NO_LOSSES', severity: 'medium', title: 'Profit Factor non significatif',
-        message: "Aucune perte enregistrée — le Profit Factor ne peut pas être interprété de façon fiable.",
+        message: "Aucune perte enregistrée — le Profit Factor ne peut pas être interprété.",
         target: target,
       };
     }
     if (tradeCount > 0 && tradeCount < 20) {
       return {
         code: 'PF_SMALL_SAMPLE', severity: 'medium', title: 'Profit Factor peu fiable',
-        message: "Moins de 20 trades (" + tradeCount + ") — le Profit Factor manque de stabilité statistique.",
+        message: "Moins de 20 trades (" + tradeCount + ") — le Profit Factor manque de stabilité.",
         target: target,
       };
     }
@@ -301,7 +238,7 @@
         severity: ratio > 0.5 ? 'high' : 'medium',
         title: 'Périodes non comparables',
         message: "Les deux variantes couvrent des durées très différentes (" +
-          coveredDaysA + "j vs " + coveredDaysB + "j). Comparer sur une période strictement identique.",
+          coveredDaysA + "j vs " + coveredDaysB + "j).",
         target: 'comparison',
       };
     }
@@ -318,7 +255,7 @@
       return {
         code: 'TRADECOUNT_IMBALANCE', severity: 'medium', title: 'Déséquilibre du nombre de trades',
         message: "Les deux variantes ont un volume de trades très différent (" +
-          tradeCountA + " vs " + tradeCountB + "). La comparaison peut être biaisée.",
+          tradeCountA + " vs " + tradeCountB + ").",
         target: 'comparison',
       };
     }
@@ -347,7 +284,6 @@
   function collectRunWarnings(metrics, target) {
     var warnings = [];
     var push = function (w) { if (w) warnings.push(w); };
-    push(warnNoTrades(metrics.tradeCount, target));
     push(warnSmallSample(metrics.tradeCount, target));
     push(warnShortPeriod(metrics.coveredDays, target));
     push(warnSingleTradeDominance(metrics.bestTrade, metrics.totalPositivePnl, target));
@@ -359,7 +295,7 @@
   }
 
   // ============================================================
-  // FORMATTERS
+  // FORMATTERS — phrases lisibles pour un trader
   // ============================================================
 
   function verdictLabel(verdict) {
@@ -412,15 +348,6 @@
       : 'Espérance mathématique négative (' + expectancy.toFixed(2) + ')';
   }
 
-  // ---- Phrases Pro ----
-
-  function sortinoSentence(sortino) {
-    if (sortino === null || sortino === undefined) return null;
-    if (sortino > 2) return 'Sortino ratio excellent (' + sortino.toFixed(2) + ') — faible volatilité à la baisse';
-    if (sortino > 1) return 'Sortino ratio positif (' + sortino.toFixed(2) + ')';
-    return 'Sortino ratio faible (' + sortino.toFixed(2) + ') — volatilité à la baisse importante';
-  }
-
   function recoveryFactorSentence(rf) {
     if (rf === null || rf === undefined) return null;
     if (rf > 3) return 'Recovery factor solide (' + rf.toFixed(2) + ') — bon ratio rendement/risque';
@@ -449,18 +376,6 @@
     return 'Consistance faible (' + score + '/100) — résultats irréguliers';
   }
 
-  function significanceSentence(ttest) {
-    if (!ttest) return null;
-    if (ttest.significant_1pct) return 'Edge statistiquement significatif (p=' + ttest.p_value.toFixed(4) + ', n=' + ttest.n + ')';
-    if (ttest.significant_5pct) return 'Edge probablement réel (p=' + ttest.p_value.toFixed(4) + ', n=' + ttest.n + ')';
-    return 'Edge non significatif (p=' + ttest.p_value.toFixed(4) + ') — potentiellement dû au hasard';
-  }
-
-  function monteCarloSentence(mc) {
-    if (!mc) return null;
-    return 'Monte Carlo : ' + mc.pct_profitable + '% de simulations rentables (IC 95% PnL : ' + mc.pnl_ci_lower.toFixed(0) + ' à ' + mc.pnl_ci_upper.toFixed(0) + ')';
-  }
-
   function degradationSentence(sh) {
     if (!sh) return null;
     if (sh.status === 'degrading') return 'Dégradation détectée : la 2ème moitié des trades est significativement moins performante';
@@ -471,8 +386,8 @@
   var METRIC_LABELS = {
     pnl: 'PnL', maxDrawdown: 'Drawdown', expectancy: 'Expectancy',
     winRate: 'Win Rate', profitFactor: 'Profit Factor', sharpeRatio: 'Sharpe Ratio',
-    sortinoRatio: 'Sortino Ratio', consistencyScore: 'Consistance',
-    recoveryFactor: 'Recovery Factor', riskRewardRatio: 'Risk/Reward'
+    consistencyScore: 'Consistance', recoveryFactor: 'Recovery Factor',
+    riskRewardRatio: 'Risk/Reward'
   };
 
   function strengthSentenceForWinner(metric, winner, winnerName, loserName) {
@@ -486,6 +401,8 @@
     if (metric === 'maxDrawdown') return 'Drawdown moins bien contenu sur ' + loserName + ' que sur ' + winnerName;
     return (METRIC_LABELS[metric] || metric) + ' inférieur sur ' + loserName + ' (vs ' + winnerName + ')';
   }
+
+  // ---- Résumés ----
 
   function buildRunSummary(verdict, run, warnings) {
     var tradeStr = run.tradeCount + ' trade' + (run.tradeCount > 1 ? 's' : '');
@@ -529,6 +446,8 @@
     }
     return '';
   }
+
+  // ---- Prochaines étapes ----
 
   function buildRunNextSteps(verdict, warnings) {
     var steps = [];
@@ -610,7 +529,7 @@
   }
 
   // ============================================================
-  // EVALUATEURS
+  // ÉVALUATEURS
   // ============================================================
 
   function evaluateRun(run) {
@@ -622,10 +541,10 @@
     }, 'run');
 
     if (run.tradeCount === 0) {
-      return { verdict: 'invalid', confidence: 'low', summary: "Ce run ne contient aucun trade — évaluation impossible.", strengths: [], weaknesses: ['Aucun trade enregistré'], reasons: ['Le run est vide'], warnings: warnings, nextSteps: ['Vérifier les données importées et le format du CSV'], recommendedAction: { type: 'review_data', target: null }, robustness: null, degradation: null, monteCarlo: null, significance: null };
+      return { verdict: 'invalid', confidence: 'low', summary: "Ce run ne contient aucun trade — évaluation impossible.", strengths: [], weaknesses: ['Aucun trade enregistré'], reasons: ['Le run est vide'], warnings: warnings, nextSteps: ['Vérifier les données importées et le format du CSV'], recommendedAction: { type: 'review_data', target: null }, degradation: null };
     }
     if (run.pnl === null && run.winRate === null && run.profitFactor === null) {
-      return { verdict: 'invalid', confidence: 'low', summary: "Métriques clés introuvables — évaluation impossible.", strengths: [], weaknesses: ['PnL, win rate et profit factor sont tous absents'], reasons: ['Aucune métrique calculable'], warnings: warnings, nextSteps: ['Vérifier le format des données importées et le mapping de colonnes'], recommendedAction: { type: 'review_data', target: null }, robustness: null, degradation: null, monteCarlo: null, significance: null };
+      return { verdict: 'invalid', confidence: 'low', summary: "Métriques clés introuvables — évaluation impossible.", strengths: [], weaknesses: ['PnL, win rate et profit factor sont tous absents'], reasons: ['Aucune métrique calculable'], warnings: warnings, nextSteps: ['Vérifier le format des données importées et le mapping de colonnes'], recommendedAction: { type: 'review_data', target: null }, degradation: null };
     }
 
     var strengths = [], weaknesses = [];
@@ -645,10 +564,7 @@
     var s5 = expectancySentence(run.expectancy);
     if (s5) ((run.expectancy > 0) ? strengths : weaknesses).push(s5);
 
-    // Pro metrics sentences
-    var sort = sortinoSentence(run.sortinoRatio);
-    if (sort) ((run.sortinoRatio || 0) > 1 ? strengths : weaknesses).push(sort);
-
+    // Pro metrics
     var rf = recoveryFactorSentence(run.recoveryFactor);
     if (rf) ((run.recoveryFactor || 0) > 1 ? strengths : weaknesses).push(rf);
 
@@ -661,15 +577,10 @@
     var cons = consistencySentence(run.consistencyScore);
     if (cons) ((run.consistencyScore || 0) >= 50 ? strengths : weaknesses).push(cons);
 
-    var sig = significanceSentence(run.ttest);
-    if (sig) (run.ttest && run.ttest.significant_5pct ? strengths : weaknesses).push(sig);
-
-    var mc = monteCarloSentence(run.monteCarlo);
-    if (mc) ((run.monteCarlo && run.monteCarlo.pct_profitable || 0) >= 60 ? strengths : weaknesses).push(mc);
-
     var deg = degradationSentence(run.splitHalf);
     if (deg) (run.splitHalf && run.splitHalf.status !== 'degrading' ? strengths : weaknesses).push(deg);
 
+    // Verdict
     var posPnl = run.pnl !== null && run.pnl > 0;
     var goodPF = run.profitFactor !== null && run.profitFactor > 1.3;
     var containedDD = isDrawdownAcceptable(run.maxDrawdown);
@@ -695,18 +606,13 @@
       reasons.push('Signaux mitigés — poursuite des tests recommandée');
     }
 
-    var robustness = computeRobustnessScore(run);
-
     return {
       verdict: verdict, confidence: computeConfidence(warnings),
       summary: buildRunSummary(verdict, run, warnings),
       strengths: strengths, weaknesses: weaknesses, reasons: reasons,
       warnings: warnings, nextSteps: buildRunNextSteps(verdict, warnings),
       recommendedAction: { type: actionType, target: run.id },
-      robustness: robustness,
       degradation: run.splitHalf || null,
-      monteCarlo: run.monteCarlo || null,
-      significance: run.ttest || null,
     };
   }
 
@@ -722,10 +628,10 @@
     if (mixedWarn) warnings.push(mixedWarn);
 
     if (variant.tradeCount === 0 || (variant.runsCount !== null && variant.runsCount === 0)) {
-      return { verdict: 'invalid', confidence: 'low', summary: "Variante sans données — aucun trade disponible.", strengths: [], weaknesses: ['Aucun trade enregistré sur cette variante'], reasons: ["La variante n'a pas encore de runs importés"], warnings: warnings, nextSteps: ['Importer un premier run CSV pour cette variante'], recommendedAction: { type: 'review_data', target: null }, robustness: null, degradation: null, monteCarlo: null, significance: null };
+      return { verdict: 'invalid', confidence: 'low', summary: "Variante sans données — aucun trade disponible.", strengths: [], weaknesses: ['Aucun trade enregistré sur cette variante'], reasons: ["La variante n'a pas encore de runs importés"], warnings: warnings, nextSteps: ['Importer un premier run CSV pour cette variante'], recommendedAction: { type: 'review_data', target: null }, degradation: null };
     }
     if (variant.pnl === null && variant.winRate === null && variant.profitFactor === null) {
-      return { verdict: 'invalid', confidence: 'low', summary: "Métriques agrégées manquantes — évaluation impossible.", strengths: [], weaknesses: ['Métriques clés introuvables sur les runs agrégés'], reasons: ['Les métriques ne peuvent pas être calculées'], warnings: warnings, nextSteps: ['Vérifier les données importées sur chaque run de cette variante'], recommendedAction: { type: 'review_data', target: null }, robustness: null, degradation: null, monteCarlo: null, significance: null };
+      return { verdict: 'invalid', confidence: 'low', summary: "Métriques agrégées manquantes — évaluation impossible.", strengths: [], weaknesses: ['Métriques clés introuvables sur les runs agrégés'], reasons: ['Les métriques ne peuvent pas être calculées'], warnings: warnings, nextSteps: ['Vérifier les données importées sur chaque run de cette variante'], recommendedAction: { type: 'review_data', target: null }, degradation: null };
     }
 
     var strengths = [], weaknesses = [];
@@ -749,10 +655,7 @@
       strengths.push('Résultats consolidés sur ' + variant.runsCount + ' runs distincts');
     }
 
-    // Pro metrics sentences
-    var sort = sortinoSentence(variant.sortinoRatio);
-    if (sort) ((variant.sortinoRatio || 0) > 1 ? strengths : weaknesses).push(sort);
-
+    // Pro metrics
     var rf = recoveryFactorSentence(variant.recoveryFactor);
     if (rf) ((variant.recoveryFactor || 0) > 1 ? strengths : weaknesses).push(rf);
 
@@ -765,15 +668,10 @@
     var cons = consistencySentence(variant.consistencyScore);
     if (cons) ((variant.consistencyScore || 0) >= 50 ? strengths : weaknesses).push(cons);
 
-    var sig = significanceSentence(variant.ttest);
-    if (sig) (variant.ttest && variant.ttest.significant_5pct ? strengths : weaknesses).push(sig);
-
-    var mc = monteCarloSentence(variant.monteCarlo);
-    if (mc) ((variant.monteCarlo && variant.monteCarlo.pct_profitable || 0) >= 60 ? strengths : weaknesses).push(mc);
-
     var deg = degradationSentence(variant.splitHalf);
     if (deg) (variant.splitHalf && variant.splitHalf.status !== 'degrading' ? strengths : weaknesses).push(deg);
 
+    // Verdict
     var posPnl = variant.pnl !== null && variant.pnl > 0;
     var goodPF = variant.profitFactor !== null && variant.profitFactor > 1.3;
     var containedDD = isDrawdownAcceptable(variant.maxDrawdown);
@@ -803,20 +701,19 @@
       reasons.push('Résultats mitigés — une itération pourrait améliorer les performances');
     }
 
-    var robustness = computeRobustnessScore(variant);
-
     return {
       verdict: verdict, confidence: computeConfidence(warnings),
       summary: buildVariantSummary(verdict, variant),
       strengths: strengths, weaknesses: weaknesses, reasons: reasons,
       warnings: warnings, nextSteps: buildVariantNextSteps(verdict, warnings),
       recommendedAction: { type: actionType, target: variant.id },
-      robustness: robustness,
       degradation: variant.splitHalf || null,
-      monteCarlo: variant.monteCarlo || null,
-      significance: variant.ttest || null,
     };
   }
+
+  // ============================================================
+  // COMPARAISON
+  // ============================================================
 
   var INCONCLUSIVE_THRESHOLD = 0.2;
   var PROMOTE_THRESHOLD = 0.4;
@@ -893,9 +790,11 @@
     if (verdict === 'promote_a' || verdict === 'promote_b') actionType = 'promote';
     else if (verdict === 'keep_testing') actionType = 'keep_testing';
 
-    // Welch t-test sur distributions mensuelles
+    // Welch t-test interne — utilisé pour renforcer le verdict, pas affiché en V1
     var significanceTest = null;
-    if (a.monthlyBreakdown && b.monthlyBreakdown && a.monthlyBreakdown.length >= 3 && b.monthlyBreakdown.length >= 3) {
+    if (a.tradePnls && b.tradePnls && a.tradePnls.length >= 5 && b.tradePnls.length >= 5) {
+      significanceTest = welchTTest(a.tradePnls, b.tradePnls);
+    } else if (a.monthlyBreakdown && b.monthlyBreakdown && a.monthlyBreakdown.length >= 3 && b.monthlyBreakdown.length >= 3) {
       var pnlsA = a.monthlyBreakdown.map(function (m) { return m.pnl; });
       var pnlsB = b.monthlyBreakdown.map(function (m) { return m.pnl; });
       significanceTest = welchTTest(pnlsA, pnlsB);

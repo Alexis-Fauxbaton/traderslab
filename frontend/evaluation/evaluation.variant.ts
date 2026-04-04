@@ -9,7 +9,7 @@ import type {
   RecommendedVariantAction,
 } from "./evaluation.types";
 import { collectRunWarnings, warnMixedRunTypes } from "./evaluation.warnings";
-import { computeConfidence, hasHighSeverity, isDrawdownAcceptable, computeRobustnessScore } from "./evaluation.helpers";
+import { computeConfidence, hasHighSeverity, isDrawdownAcceptable } from "./evaluation.helpers";
 import {
   buildVariantSummary,
   buildVariantNextSteps,
@@ -18,13 +18,10 @@ import {
   profitFactorSentence,
   drawdownSentence,
   expectancySentence,
-  sortinoSentence,
   recoveryFactorSentence,
   riskRewardSentence,
   streakSentence,
   consistencySentence,
-  significanceSentence,
-  monteCarloSentence,
   degradationSentence,
 } from "./evaluation.formatters";
 
@@ -126,9 +123,6 @@ export function evaluateVariant(variant: VariantMetrics): EvaluationResult {
   }
 
   // ---- Pro metrics sentences ----
-  const sort = sortinoSentence(variant.sortinoRatio);
-  if (sort) ((variant.sortinoRatio ?? 0) > 1 ? strengths : weaknesses).push(sort);
-
   const rf = recoveryFactorSentence(variant.recoveryFactor);
   if (rf) ((variant.recoveryFactor ?? 0) > 1 ? strengths : weaknesses).push(rf);
 
@@ -140,12 +134,6 @@ export function evaluateVariant(variant: VariantMetrics): EvaluationResult {
 
   const cons = consistencySentence(variant.consistencyScore);
   if (cons) ((variant.consistencyScore ?? 0) >= 50 ? strengths : weaknesses).push(cons);
-
-  const sig = significanceSentence(variant.ttest);
-  if (sig) (variant.ttest?.significant_5pct ? strengths : weaknesses).push(sig);
-
-  const mc = monteCarloSentence(variant.monteCarlo);
-  if (mc) ((variant.monteCarlo?.pct_profitable ?? 0) >= 60 ? strengths : weaknesses).push(mc);
 
   const deg = degradationSentence(variant.splitHalf);
   if (deg) (variant.splitHalf?.status !== "degrading" ? strengths : weaknesses).push(deg);
@@ -190,8 +178,7 @@ export function evaluateVariant(variant: VariantMetrics): EvaluationResult {
     reasons.push("Résultats mitigés — une itération pourrait améliorer les performances");
   }
 
-  // ---- 5. Score de robustesse ----
-  const robustness = computeRobustnessScore(variant);
+  // ---- 5. Résultat ----
 
   return {
     verdict,
@@ -203,9 +190,6 @@ export function evaluateVariant(variant: VariantMetrics): EvaluationResult {
     warnings,
     nextSteps: buildVariantNextSteps(verdict, warnings),
     recommendedAction: { type: actionType, target: variant.id },
-    robustness,
     degradation: variant.splitHalf ?? null,
-    monteCarlo: variant.monteCarlo ?? null,
-    significance: variant.ttest ?? null,
   };
 }

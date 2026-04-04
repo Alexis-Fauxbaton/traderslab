@@ -146,9 +146,13 @@ export function richTextPlain(val, maxLen) {
 // Evaluation helpers
 export function buildRunMetrics(data) {
   const m = data.metrics || {};
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+  // Drawdown ratio: use backend max_drawdown_pct when available, else compute from initial_balance
+  let maxDDRatio = m.max_drawdown_pct ?? null;
+  if (maxDDRatio === null && m.max_drawdown != null) {
+    const ib = _unitSettings.initial_balance || 10000;
+    const ddPeak = ib + (m.dd_peak_equity || 0);
+    maxDDRatio = ddPeak > 0 ? -(m.max_drawdown / ddPeak) : null;
+  }
   const totalTrades = m.total_trades || 0;
   const winCount = Math.round((m.win_rate || 0) * totalTrades);
   const lossCount = totalTrades - winCount;
@@ -173,15 +177,20 @@ export function buildRunMetrics(data) {
     ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
     splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
     monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
+    tradePnls: null,
   };
 }
 
 export function buildVariantMetrics(variantData, aggMetrics, runs) {
   if (!aggMetrics) return null;
   const m = aggMetrics;
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+  // Drawdown ratio: use backend max_drawdown_pct when available, else compute from initial_balance
+  let maxDDRatio = m.max_drawdown_pct ?? null;
+  if (maxDDRatio === null && m.max_drawdown != null) {
+    const ib = _unitSettings.initial_balance || 10000;
+    const ddPeak = ib + (m.dd_peak_equity || 0);
+    maxDDRatio = ddPeak > 0 ? -(m.max_drawdown / ddPeak) : null;
+  }
   const totalTrades = m.total_trades || 0;
   const winCount = Math.round((m.win_rate || 0) * totalTrades);
   const lossCount = totalTrades - winCount;
@@ -213,15 +222,20 @@ export function buildVariantMetrics(variantData, aggMetrics, runs) {
     ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
     splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
     monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
+    tradePnls: null,
   };
 }
 
 export function buildVariantMetricsForCompare(variantData, metricsData, trades) {
   if (!metricsData) return null;
   const m = metricsData;
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
+  // Drawdown ratio: use backend max_drawdown_pct when available, else compute from initial_balance
+  let maxDDRatio = m.max_drawdown_pct ?? null;
+  if (maxDDRatio === null && m.max_drawdown != null) {
+    const ib = _unitSettings.initial_balance || 10000;
+    const ddPeak = ib + (m.dd_peak_equity || 0);
+    maxDDRatio = ddPeak > 0 ? -(m.max_drawdown / ddPeak) : null;
+  }
   const totalTrades = m.total_trades || 0;
   const winCount = Math.round((m.win_rate || 0) * totalTrades);
   const lossCount = totalTrades - winCount;
@@ -247,5 +261,6 @@ export function buildVariantMetricsForCompare(variantData, metricsData, trades) 
     ttest: m.ttest ?? null, monteCarlo: m.monte_carlo ?? null,
     splitHalf: m.split_half ?? null, distribution: m.distribution ?? null,
     monthlyBreakdown: m.monthly_breakdown ?? null, underwater: m.underwater ?? null,
+    tradePnls: m.trade_pnls ?? (trades ? trades.map(t => t.pnl) : null),
   };
 }

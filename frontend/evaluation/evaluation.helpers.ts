@@ -5,12 +5,8 @@
 import type {
   Confidence,
   Warning,
-  ScoreDetail,
-  ScoreResult,
   VariantMetrics,
   RunMetrics,
-  RobustnessScore,
-  TTestResult,
 } from "./evaluation.types";
 
 // ---- Utilitaires génériques ----
@@ -58,71 +54,6 @@ export function isDrawdownAcceptable(
 ): boolean {
   if (maxDrawdown === null) return false;
   return Math.abs(maxDrawdown) < threshold;
-}
-
-// ---- Score de robustesse (0-100) ----
-
-/**
- * Score composite de robustesse :
- *   - Consistance mensuelle (0-30 pts)
- *   - Recovery factor (0-20 pts)
- *   - Risk/Reward ratio (0-15 pts)
- *   - Taille d'échantillon (0-15 pts)
- *   - Significativité statistique (0-20 pts)
- */
-export function computeRobustnessScore(
-  metrics: RunMetrics | VariantMetrics
-): RobustnessScore | null {
-  if (metrics.tradeCount < 5) return null;
-
-  // 1. Consistance (0-30) — basé sur consistency_score (0-100) du backend
-  let consistencyPart = 0;
-  if (metrics.consistencyScore !== null) {
-    consistencyPart = Math.round((metrics.consistencyScore / 100) * 30);
-  }
-
-  // 2. Recovery factor (0-20) — 0 si négatif, 20 si >= 3
-  let recoveryPart = 0;
-  if (metrics.recoveryFactor !== null && metrics.recoveryFactor > 0) {
-    recoveryPart = Math.round(Math.min(1, metrics.recoveryFactor / 3) * 20);
-  }
-
-  // 3. Risk/Reward (0-15) — 0 si < 0.5, 15 si >= 2
-  let riskRewardPart = 0;
-  if (metrics.riskRewardRatio !== null && metrics.riskRewardRatio > 0.5) {
-    const normalized = Math.min(1, (metrics.riskRewardRatio - 0.5) / 1.5);
-    riskRewardPart = Math.round(normalized * 15);
-  }
-
-  // 4. Taille d'échantillon (0-15) — 0 si <10 trades, 15 si >=100
-  let sampleSizePart = 0;
-  if (metrics.tradeCount >= 10) {
-    const normalized = Math.min(1, (metrics.tradeCount - 10) / 90);
-    sampleSizePart = Math.round(normalized * 15);
-  }
-
-  // 5. Significativité (0-20) — basé sur p-value du t-test
-  let significancePart = 0;
-  if (metrics.ttest) {
-    if (metrics.ttest.significant_1pct) {
-      significancePart = 20;
-    } else if (metrics.ttest.significant_5pct) {
-      significancePart = 14;
-    } else if (metrics.ttest.p_value < 0.1) {
-      significancePart = 8;
-    }
-  }
-
-  const total = Math.min(100, consistencyPart + recoveryPart + riskRewardPart + sampleSizePart + significancePart);
-
-  return {
-    total,
-    consistencyPart,
-    recoveryPart,
-    riskRewardPart,
-    sampleSizePart,
-    significancePart,
-  };
 }
 
 // ---- Welch t-test pour 2 distributions ----

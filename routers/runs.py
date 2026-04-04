@@ -12,7 +12,7 @@ from schemas.run import RunOut, RunDetail, RunImportResponse, TradesPaginated
 from schemas.trade import TradeOut
 from services.csv_parser import parse_csv
 from services.metrics import compute_metrics, _compute_sharpe_annualized
-from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics
+from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics, recompute_run_metrics, _run_metrics_stale
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -33,6 +33,11 @@ def get_run_summary(run_id: str, db: Session = Depends(get_db)):
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(404, "Run introuvable")
+    # Migration lazy : recalcule les métriques si les clés Pro sont absentes
+    if _run_metrics_stale(run.metrics):
+        recompute_run_metrics(run_id, db)
+        db.commit()
+        db.refresh(run)
     return run
 
 
@@ -72,14 +77,14 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(404, "Run introuvable")
-    trades = db.query(Trade).filter(Trade.run_id == run_id).order_by(Trade.close_time).all()
 
-    # Migration lazy : recalcule sharpe_ratio si absent des métriques stockées
-    if run.metrics is not None and "sharpe_ratio" not in run.metrics:
-        trades_data = [{"pnl": t.pnl, "close_time": t.close_time} for t in trades]
-        sorted_td = sorted(trades_data, key=lambda x: x["close_time"])
-        run.metrics = {**run.metrics, "sharpe_ratio": _compute_sharpe_annualized(sorted_td)}
+    # Migration lazy : recalcule les métriques si les clés Pro sont absentes
+    if _run_metrics_stale(run.metrics):
+        recompute_run_metrics(run_id, db)
         db.commit()
+        db.refresh(run)
+
+    trades = db.query(Trade).filter(Trade.run_id == run_id).order_by(Trade.close_time).all()
 
     return RunDetail(
         **RunOut.model_validate(run).model_dump(),
