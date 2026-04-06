@@ -45,12 +45,12 @@ export default function Modal({ title, wide, children, onClose, onSubmit, custom
   );
 }
 
-export function InputField({ name, label, type = 'text', required = true, value, placeholder, onChange }) {
+export function InputField({ name, label, type = 'text', required = true, value, defaultValue, placeholder, onChange }) {
   return (
     <div className="mb-3">
       <label className="block text-sm text-slate-300 mb-1">{label}</label>
       <input
-        name={name} type={type} defaultValue={value} required={required}
+        name={name} type={type} defaultValue={defaultValue ?? value} required={required}
         placeholder={placeholder}
         onChange={onChange}
         className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none placeholder:text-slate-500"
@@ -59,12 +59,12 @@ export function InputField({ name, label, type = 'text', required = true, value,
   );
 }
 
-export function TextareaField({ name, label, required = false, value }) {
+export function TextareaField({ name, label, required = false, value, defaultValue }) {
   return (
     <div className="mb-3">
       <label className="block text-sm text-slate-300 mb-1">{label}</label>
       <textarea
-        name={name} required={required} rows={2} defaultValue={value || ''}
+        name={name} required={required} rows={2} defaultValue={defaultValue ?? value ?? ''}
         className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
       />
     </div>
@@ -161,4 +161,74 @@ export function getRichValue(name) {
   const html = content.innerHTML.trim();
   if (!html || html === '<br>' || html === '<p><br></p>') return '';
   return html;
+}
+
+export function ChipSelect({ name, label, options, defaultValue = [] }) {
+  const [selected, setSelected] = useState(defaultValue);
+
+  const toggle = (val) => {
+    setSelected(prev => prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]);
+  };
+
+  return (
+    <div className="mb-3">
+      <label className="block text-sm text-slate-300 mb-1">{label}</label>
+      <input type="hidden" name={name} value={JSON.stringify(selected)} />
+      <div className="flex flex-wrap gap-1.5">
+        {options.map(o => (
+          <button key={o.value} type="button" onClick={() => toggle(o.value)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
+              selected.includes(o.value)
+                ? 'bg-blue-600 text-white'
+                : 'bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600'
+            }`}
+          >{o.label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function TagInput({ name, label, defaultValue = [], placeholder = 'Ajouter…' }) {
+  const [tags, setTags] = useState(defaultValue);
+  const [input, setInput] = useState('');
+
+  const addTag = (val) => {
+    const trimmed = val.trim().toUpperCase();
+    if (trimmed && !tags.includes(trimmed)) setTags(prev => [...prev, trimmed]);
+    setInput('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(input);
+    }
+    if (e.key === 'Backspace' && !input && tags.length > 0) {
+      setTags(prev => prev.slice(0, -1));
+    }
+  };
+
+  return (
+    <div className="mb-3">
+      <label className="block text-sm text-slate-300 mb-1">{label}</label>
+      <input type="hidden" name={name} value={JSON.stringify(tags)} />
+      <div className="flex flex-wrap gap-1.5 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 focus-within:border-blue-500">
+        {tags.map(t => (
+          <span key={t} className="inline-flex items-center gap-1 bg-slate-600 text-white text-xs font-medium px-2 py-0.5 rounded">
+            {t}
+            <button type="button" onClick={() => setTags(prev => prev.filter(v => v !== t))}
+              className="text-slate-400 hover:text-white ml-0.5">&times;</button>
+          </span>
+        ))}
+        <input
+          type="text" value={input} onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => { if (input.trim()) addTag(input); }}
+          placeholder={tags.length === 0 ? placeholder : ''}
+          className="flex-1 min-w-[80px] bg-transparent text-sm text-white outline-none placeholder:text-slate-500 py-0.5"
+        />
+      </div>
+    </div>
+  );
 }

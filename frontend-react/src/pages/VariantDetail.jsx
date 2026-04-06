@@ -8,7 +8,7 @@ import {
 } from '../lib/utils';
 import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownSpan, RichDisplay, MetricCard, EmptyState } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
-import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart } from '../components/ProCharts';
+import { MonthlyHeatmap, UnderwaterChart, EquityChart } from '../components/ProCharts';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
 
 function LineageTree({ node, currentId, depth = 0 }) {
@@ -362,16 +362,19 @@ export default function VariantDetail({ setCompareSlotA }) {
           <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
             Métriques agrégées — {data.runs?.length || 0} run{(data.runs?.length || 0) > 1 ? 's' : ''}
           </h2>
-          <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
             <MetricCard label="Total PnL"><PnlSpan value={aggMetrics.total_pnl} /></MetricCard>
             <MetricCard label="Trades">{aggMetrics.total_trades}</MetricCard>
             <MetricCard label="Win Rate">{formatPercent(aggMetrics.win_rate)}</MetricCard>
             <MetricCard label="Profit Factor">{aggMetrics.profit_factor != null ? aggMetrics.profit_factor.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Max Drawdown"><DrawdownSpan value={aggMetrics.max_drawdown} ddPeak={ddPeak} /></MetricCard>
             <MetricCard label="Expectancy"><PnlSpan value={aggMetrics.expectancy} /></MetricCard>
+            <MetricCard label="RR Moyen">{rr != null ? rr.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Max Drawdown"><DrawdownSpan value={aggMetrics.max_drawdown} ddPeak={ddPeak} /></MetricCard>
+            <MetricCard label="Recovery Factor">{aggMetrics.recovery_factor != null ? aggMetrics.recovery_factor.toFixed(2) : '—'}</MetricCard>
             <MetricCard label="Avg Win"><PnlSpan value={aggMetrics.avg_win} /></MetricCard>
             <MetricCard label="Avg Loss"><PnlSpan value={aggMetrics.avg_loss} /></MetricCard>
-            <MetricCard label="RR Moyen">{rr != null ? rr.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Max Wins consécutifs">{aggMetrics.max_consecutive_wins ?? '—'}</MetricCard>
+            <MetricCard label="Max Losses consécutifs">{aggMetrics.max_consecutive_losses ?? '—'}</MetricCard>
           </div>
         </div>
       )}
@@ -379,12 +382,12 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Evaluation */}
       {variantEval && <EvaluationPanel result={variantEval} title="Évaluation de la variante" />}
 
-      {/* Pro metrics & charts */}
+      {/* Charts */}
       {aggMetrics && aggMetrics.total_trades > 0 && (
         <>
-          <ProMetricsGrid metrics={aggMetrics} />
+          <EquityChart equityCurve={aggMetrics.equity_curve} />
           <MonthlyHeatmap monthlyBreakdown={aggMetrics.monthly_breakdown} />
-          <UnderwaterChart underwater={aggMetrics.underwater} />
+          <UnderwaterChart underwater={aggMetrics.underwater} equityCurve={aggMetrics.equity_curve} />
         </>
       )}
 

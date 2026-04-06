@@ -5,7 +5,8 @@ import { useSidebar } from '../hooks/useSidebar';
 import { formatDate, richTextPlain, setCurrentAvgLoss, STATUS_LABELS, formatPercent } from '../lib/utils';
 import { Breadcrumb, Spinner, StatusBadge, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
-import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
+import MetricCard from '../components/MetricCard';
+import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue, TagInput, ChipSelect } from '../components/Modal';
 
 const TF_OPTIONS = [
   { value: 'M1', label: 'M1' }, { value: 'M5', label: 'M5' }, { value: 'M15', label: 'M15' },
@@ -104,6 +105,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
   const [varMetrics, setVarMetrics] = useState({});
   const [view, setView] = useState('grid');
   const [showEdit, setShowEdit] = useState(false);
+  const [editKey, setEditKey] = useState(0);
   const [showNewVar, setShowNewVar] = useState(false);
   const [, setTick] = useState(0);
 
@@ -136,7 +138,8 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
   const handleEdit = async (fd) => {
     await API.put('/strategies/' + id, {
       name: fd.get('name'), description: fd.get('description'),
-      market: fd.get('market'), timeframe: fd.get('timeframe'),
+      pairs: JSON.parse(fd.get('pairs') || '[]'),
+      timeframes: JSON.parse(fd.get('timeframes') || '[]'),
     });
     await reload();
     setShowEdit(false);
@@ -217,13 +220,13 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             <h1 className="text-2xl font-bold text-white mb-1">{data.name}</h1>
             <p className="text-slate-400 text-sm mb-3">{data.description || 'Pas de description'}</p>
             <div className="flex gap-4 text-sm text-slate-400">
-              <span>📈 {data.market}</span>
-              <span>⏱ {data.timeframe}</span>
+              <span>📈 {(data.pairs || []).join(', ') || '—'}</span>
+              <span>⏱ {(data.timeframes || []).join(', ') || '—'}</span>
               <span>📅 {formatDate(data.created_at)}</span>
             </div>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowEdit(true)} className="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">Modifier</button>
+            <button onClick={() => { setEditKey(k => k + 1); setShowEdit(true); }} className="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">Modifier</button>
             <button onClick={handleDelete} className="text-sm text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg border border-red-900 hover:border-red-700 transition">Supprimer</button>
           </div>
         </div>
@@ -282,42 +285,21 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             <button onClick={handleFirstImport} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition">📥 Créer et importer un run</button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 [&>a]:h-full">
             {data.variants.map(v => {
               const m = varMetrics[v.id];
-              const hasMet = m && m.total_trades > 0;
-              if (hasMet) setCurrentAvgLoss(m.avg_loss);
-              const rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
               const desc = richTextPlain(v.description, 100);
 
               return (
-                <Link key={v.id} to={'/variant/' + v.id} className="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-semibold text-white group-hover:text-blue-400 transition">{v.name}</h3>
-                    <StatusBadge status={v.status} />
-                  </div>
-                  {v.key_change && (
-                    <div className="flex items-start gap-1.5 mb-2">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5 shrink-0">Δ</span>
-                      <span className="text-xs text-blue-300/90 font-medium leading-snug">{v.key_change}</span>
-                    </div>
-                  )}
-                  {desc && <p className="text-xs text-slate-500 mb-2 truncate">{desc}</p>}
-                  {hasMet && (
-                    <>
-                      <MiniChart data={m.equity_curve} height={56} />
-                      <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">
-                        <span>PnL <PnlSpan value={m.total_pnl} /></span>
-                        <span>PF <span className="text-white">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</span></span>
-                        <span>RR <span className="text-white">{rr != null ? rr.toFixed(2) : '—'}</span></span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex items-center gap-3 text-xs text-slate-500">
-                    <span>📅 {formatDate(v.created_at)}</span>
-                    {hasMet && <span>{m.total_trades} trades</span>}
-                  </div>
-                </Link>
+                <MetricCard
+                  key={v.id}
+                  to={'/variant/' + v.id}
+                  title={v.name}
+                  badge={<StatusBadge status={v.status} />}
+                  description={desc}
+                  metrics={m}
+                  footer={<span>📅 {formatDate(v.created_at)}</span>}
+                />
               );
             })}
           </div>
@@ -333,11 +315,11 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
 
       {/* Edit strategy modal */}
       {showEdit && (
-        <Modal title="Modifier la Stratégie" onClose={() => setShowEdit(false)} onSubmit={handleEdit}>
+        <Modal key={editKey} title="Modifier la Stratégie" onClose={() => setShowEdit(false)} onSubmit={handleEdit}>
           <InputField name="name" label="Nom" required defaultValue={data.name} />
           <TextareaField name="description" label="Description" defaultValue={data.description} />
-          <InputField name="market" label="Marché" required defaultValue={data.market} />
-          <SelectField name="timeframe" label="Timeframe" options={TF_OPTIONS} defaultValue={data.timeframe} />
+          <TagInput name="pairs" label="Paires" defaultValue={data.pairs || []} placeholder="Ex: EURUSD, GBPUSD…" />
+          <ChipSelect name="timeframes" label="Timeframes" options={TF_OPTIONS} defaultValue={data.timeframes || []} />
         </Modal>
       )}
 

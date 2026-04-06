@@ -595,8 +595,8 @@ def _build_context(
     *,
     run_types: list[str] | None = None,
     runs_count: int | None = None,
-    instrument: str | None = None,
-    timeframe: str | None = None,
+    instruments: list[str] | None = None,
+    timeframes: list[str] | None = None,
     strategy_name: str | None = None,
     variant_name: str | None = None,
     parent_variant_name: str | None = None,
@@ -611,8 +611,8 @@ def _build_context(
         "period_start": period_start,
         "period_end": period_end,
         "runs_count": runs_count,
-        "instrument": instrument,
-        "timeframe": timeframe,
+        "instruments": instruments or [],
+        "timeframes": timeframes or [],
         "strategy_name": strategy_name,
         "variant_name": variant_name,
         "parent_variant_name": parent_variant_name,
@@ -628,8 +628,8 @@ def analyze_variant(
     *,
     run_types: list[str] | None = None,
     runs_count: int | None = None,
-    instrument: str | None = None,
-    timeframe: str | None = None,
+    instruments: list[str] | None = None,
+    timeframes: list[str] | None = None,
     strategy_name: str | None = None,
     variant_name: str | None = None,
     parent_variant_name: str | None = None,
@@ -640,7 +640,7 @@ def analyze_variant(
         metrics: Résultat de compute_metrics().
         run_types: Liste des types de runs agrégés (backtest, forward, live).
         runs_count: Nombre de runs agrégés.
-        instrument, timeframe, strategy_name, variant_name, parent_variant_name:
+        instruments, timeframes, strategy_name, variant_name, parent_variant_name:
             Contexte optionnel pour enrichir l'affichage.
 
     Returns:
@@ -650,8 +650,8 @@ def analyze_variant(
         metrics,
         run_types=run_types,
         runs_count=runs_count,
-        instrument=instrument,
-        timeframe=timeframe,
+        instruments=instruments,
+        timeframes=timeframes,
         strategy_name=strategy_name,
         variant_name=variant_name,
         parent_variant_name=parent_variant_name,

@@ -1,5 +1,88 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Chart } from 'chart.js';
+
+/**
+ * Equity Curve Chart — large PnL evolution line chart with zoom.
+ * Props: equityCurve = [{ date, cumulative_pnl }, ...]
+ */
+export function EquityChart({ equityCurve }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+  const [isZoomed, setIsZoomed] = useState(false);
+
+  useEffect(() => {
+    if (!equityCurve?.length || !canvasRef.current) return;
+    if (chartRef.current) chartRef.current.destroy();
+
+    const labels = equityCurve.map(p => {
+      const d = new Date(p.date);
+      return d.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
+    });
+    const values = equityCurve.map(p => p.cumulative_pnl);
+    const color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
+    const bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
+
+    chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'PnL Cumulé',
+          data: values,
+          borderColor: color,
+          backgroundColor: bgColor,
+          fill: true,
+          tension: 0.3,
+          pointRadius: values.length > 80 ? 0 : 3,
+          pointHoverRadius: 6,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          zoom: {
+            zoom: {
+              drag: { enabled: true, backgroundColor: 'rgba(59,130,246,0.15)', borderColor: 'rgba(59,130,246,0.5)', borderWidth: 1 },
+              mode: 'x',
+              onZoom: () => setIsZoomed(true),
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `PnL: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`,
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
+          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+        },
+      },
+    });
+
+    return () => { if (chartRef.current) chartRef.current.destroy(); };
+  }, [equityCurve]);
+
+  const resetZoom = () => {
+    if (chartRef.current) { chartRef.current.resetZoom(); setIsZoomed(false); }
+  };
+
+  if (!equityCurve || equityCurve.length < 2) return null;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Évolution du PnL</h3>
+        {isZoomed && (
+          <button onClick={resetZoom} className="text-xs text-blue-400 hover:text-blue-300 transition">Réinitialiser zoom</button>
+        )}
+      </div>
+      <div style={{ height: 280 }}><canvas ref={canvasRef} /></div>
+    </div>
+  );
+}
 
 /**
  * Monthly PnL Heatmap — grille de mois colorée vert/rouge.
@@ -83,14 +166,16 @@ export function UnderwaterChart({ underwater, equityCurve }) {
   const chartRef = useRef(null);
 
   useEffect(() => {
-    if (!underwater || !equityCurve || underwater.length === 0) return;
+    if (!underwater || underwater.length === 0) return;
     if (!canvasRef.current) return;
     if (chartRef.current) chartRef.current.destroy();
 
-    const labels = equityCurve.map(p => {
-      const d = new Date(p.date);
-      return d.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
-    });
+    const labels = equityCurve && equityCurve.length === underwater.length
+      ? equityCurve.map(p => {
+          const d = new Date(p.date);
+          return d.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
+        })
+      : underwater.map((_, i) => i + 1);
 
     chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
       type: 'line',
@@ -142,7 +227,6 @@ export function ProMetricsGrid({ metrics }) {
     { label: 'Risk/Reward', value: m.risk_reward_ratio, fmt: v => v?.toFixed(2) ?? '—' },
     { label: 'Max Win Streak', value: m.max_consecutive_wins, fmt: v => v ?? '—' },
     { label: 'Max Loss Streak', value: m.max_consecutive_losses, fmt: v => v ?? '—' },
-    { label: 'Consistance', value: m.consistency_score, fmt: v => v != null ? `${v}/100` : '—' },
   ].filter(c => c.value != null);
 
   if (cards.length === 0) return null;

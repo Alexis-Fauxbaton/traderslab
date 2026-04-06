@@ -31,6 +31,9 @@ def run_migrations():
     _add_column_if_missing(insp, "variants", "aggregate_metrics", "TEXT")
     _add_column_if_missing(insp, "strategies", "aggregate_metrics", "TEXT")
 
+    # Migrate market → pairs, timeframe → timeframes (JSON arrays)
+    _migrate_strategy_pairs_timeframes(insp)
+
     _create_index_if_missing("ix_trades_run_id", "trades", "run_id")
     _create_index_if_missing("ix_trades_close_time", "trades", "close_time")
     _create_index_if_missing("ix_runs_variant_id", "runs", "variant_id")
@@ -52,3 +55,61 @@ def _create_index_if_missing(index_name: str, table: str, column: str):
     with engine.begin() as conn:
         conn.execute(text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})"))
     logger.info("Migration: ensured index %s on %s(%s)", index_name, table, column)
+
+
+def _migrate_strategy_pairs_timeframes(insp):
+    """Migrate old market/timeframe string columns to pairs/timeframes JSON arrays."""
+    import json
+
+    if not insp.has_table("strategies"):
+        return
+
+    existing = {c["name"] for c in insp.get_columns("strategies")}
+
+    # Add new columns if missing
+    if "pairs" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE strategies ADD COLUMN pairs TEXT DEFAULT '[]'"))
+        logger.info("Migration: added column strategies.pairs")
+
+    if "timeframes" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE strategies ADD COLUMN timeframes TEXT DEFAULT '[]'"))
+        logger.info("Migration: added column strategies.timeframes")
+
+    # Migrate data from old columns if they exist
+    if "market" in existing and "pairs" in existing:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text("SELECT id, market FROM strategies WHERE market IS NOT NULL AND (pairs IS NULL OR pairs = '[]')")
+            ).fetchall()
+            for row in rows:
+                pairs_json = json.dumps([row[1]] if row[1] else [])
+                conn.execute(
+                    text("UPDATE strategies SET pairs = :pairs WHERE id = :id"),
+                    {"pairs": pairs_json, "id": row[0]},
+                )
+            if rows:
+                logger.info("Migration: migrated %d strategies market → pairs", len(rows))
+
+    if "timeframe" in existing and "timeframes" in existing:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text("SELECT id, timeframe FROM strategies WHERE timeframe IS NOT NULL AND (timeframes IS NULL OR timeframes = '[]')")
+            ).fetchall()
+            for row in rows:
+                tfs_json = json.dumps([row[1]] if row[1] else [])
+                conn.execute(
+                    text("UPDATE strategies SET timeframes = :tfs WHERE id = :id"),
+                    {"tfs": tfs_json, "id": row[0]},
+                )
+            if rows:
+                logger.info("Migration: migrated %d strategies timeframe → timeframes", len(rows))
+
+    # Drop old columns now that data has been migrated
+    existing = {c["name"] for c in insp.get_columns("strategies")}
+    for old_col in ("market", "timeframe"):
+        if old_col in existing:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE strategies DROP COLUMN {old_col}"))
+            logger.info("Migration: dropped old column strategies.%s", old_col)

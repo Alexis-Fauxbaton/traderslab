@@ -4,7 +4,7 @@ import { SidebarProvider } from './hooks/useSidebar';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import { Spinner } from './components/UI';
-import Modal, { InputField, TextareaField, SelectField } from './components/Modal';
+import Modal, { InputField, TextareaField, TagInput, ChipSelect } from './components/Modal';
 import API from './lib/api';
 import { useSidebar } from './hooks/useSidebar';
 
@@ -57,8 +57,8 @@ function AppInner() {
     const strat = await API.post('/strategies', {
       name: fd.get('name'),
       description: fd.get('description'),
-      market: fd.get('market'),
-      timeframe: fd.get('timeframe'),
+      pairs: JSON.parse(fd.get('pairs') || '[]'),
+      timeframes: JSON.parse(fd.get('timeframes') || '[]'),
     });
     const v = await API.post('/variants', {
       strategy_id: strat.id,
@@ -96,8 +96,8 @@ function AppInner() {
         <Modal title="Nouvelle Stratégie" onClose={() => setShowNewStrat(false)} onSubmit={handleNewStrategy}>
           <InputField name="name" label="Nom" required />
           <TextareaField name="description" label="Description" />
-          <InputField name="market" label="Marché" required defaultValue="XAUUSD" />
-          <SelectField name="timeframe" label="Timeframe" defaultValue="M15" options={[
+          <TagInput name="pairs" label="Paires" defaultValue={['XAUUSD']} placeholder="Ex: EURUSD, GBPUSD…" />
+          <ChipSelect name="timeframes" label="Timeframes" defaultValue={['M15']} options={[
             { value: 'M1', label: 'M1' }, { value: 'M5', label: 'M5' }, { value: 'M15', label: 'M15' },
             { value: 'M30', label: 'M30' }, { value: 'H1', label: 'H1' }, { value: 'H4', label: 'H4' },
             { value: 'D1', label: 'D1' }, { value: 'W1', label: 'W1' },

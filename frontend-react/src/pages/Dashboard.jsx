@@ -4,6 +4,7 @@ import API from '../lib/api';
 import { formatDate, timeAgo, formatPercent, formatPnlRaw, setCurrentAvgLoss, STATUS_LABELS, richTextPlain } from '../lib/utils';
 import { Spinner, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
+import MetricCard from '../components/MetricCard';
 
 function WidgetCard({ title, icon, children }) {
   return (
@@ -173,40 +174,29 @@ export default function Dashboard({ onNewStrategy }) {
           <p className="text-lg mb-4">Aucune stratégie créée</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {strategies.map(s => {
-            const m = s.aggregate_metrics;
-            const hasMet = m && m.total_trades > 0;
-            if (hasMet) setCurrentAvgLoss(m.avg_loss);
-            const rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
-            const desc = richTextPlain(s.description, 120);
-            const pnl = hasMet ? formatPnlRaw(m.total_pnl) : null;
-
-            return (
-              <Link key={s.id} to={'/strategy/' + s.id} className="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-white group-hover:text-blue-400 transition">{s.name}</h3>
-                  <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{s.timeframe}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 [&>a]:h-full">
+          {strategies.map(s => (
+            <MetricCard
+              key={s.id}
+              to={'/strategy/' + s.id}
+              title={s.name}
+              badge={
+                <div className="flex gap-1 flex-wrap justify-end">
+                  {(s.timeframes || []).map(tf => (
+                    <span key={tf} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{tf}</span>
+                  ))}
                 </div>
-                <p className="text-xs text-slate-400 mb-2">{desc || <span className="italic">Pas de description</span>}</p>
-                {hasMet && (
-                  <>
-                    <MiniChart data={m.equity_curve} height={60} />
-                    <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">
-                      <span>PnL <PnlSpan value={m.total_pnl} /></span>
-                      <span>Profit Factor <span className="text-white">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</span></span>
-                      <span>RR Moyen <span className="text-white">{rr != null ? rr.toFixed(2) : '—'}</span></span>
-                    </div>
-                  </>
-                )}
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <span>📈 {s.market}</span>
+              }
+              description={s.description}
+              metrics={s.aggregate_metrics}
+              footer={
+                <>
+                  <span>📈 {(s.pairs || []).join(', ') || '—'}</span>
                   <span>📅 {formatDate(s.created_at)}</span>
-                  {hasMet && <span>{m.total_trades} trades</span>}
-                </div>
-              </Link>
-            );
-          })}
+                </>
+              }
+            />
+          ))}
         </div>
       )}
     </div>
