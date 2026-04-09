@@ -33,3 +33,6 @@ desktop.ini
 *.log
 .env
 .env.*
+
+# Node
+node_modules/
