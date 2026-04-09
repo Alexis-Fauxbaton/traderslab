@@ -8,6 +8,17 @@ function withBase(url) {
   return `${API_BASE}${url}`;
 }
 
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+function authHeaders(extra = {}) {
+  const token = getToken();
+  const headers = { ...extra };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
+
 function cacheGet(url) {
   const entry = CACHE.get(url);
   if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
@@ -20,6 +31,12 @@ function cacheSet(url, data) {
 }
 
 async function handleRes(res) {
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    window.location.hash = '#/login';
+    throw new Error('Session expired');
+  }
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error(e.detail || res.statusText);
@@ -32,7 +49,7 @@ const API = {
     const fullUrl = withBase(url);
     const cached = cacheGet(fullUrl);
     if (cached) return cached;
-    const data = await handleRes(await fetch(fullUrl));
+    const data = await handleRes(await fetch(fullUrl, { headers: authHeaders() }));
     cacheSet(fullUrl, data);
     return data;
   },
@@ -40,7 +57,7 @@ const API = {
     const result = await handleRes(
       await fetch(withBase(url), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(data),
       })
     );
@@ -51,7 +68,18 @@ const API = {
     const result = await handleRes(
       await fetch(withBase(url), {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(data),
+      })
+    );
+    CACHE.clear();
+    return result;
+  },
+  async patch(url, data) {
+    const result = await handleRes(
+      await fetch(withBase(url), {
+        method: 'PATCH',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(data),
       })
     );
@@ -59,7 +87,13 @@ const API = {
     return result;
   },
   async del(url) {
-    const res = await fetch(withBase(url), { method: 'DELETE' });
+    const res = await fetch(withBase(url), { method: 'DELETE', headers: authHeaders() });
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.hash = '#/login';
+      throw new Error('Session expired');
+    }
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       throw new Error(e.detail || res.statusText);
@@ -70,6 +104,7 @@ const API = {
     const result = await handleRes(
       await fetch(withBase(url), {
         method: 'POST',
+        headers: authHeaders(),
         body: formData,
       })
     );

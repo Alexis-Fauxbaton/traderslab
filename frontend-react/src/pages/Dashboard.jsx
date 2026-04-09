@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../lib/api';
-import { formatDate, timeAgo, formatPercent, formatPnlRaw, setCurrentAvgLoss, STATUS_LABELS, richTextPlain } from '../lib/utils';
+import { formatDate, timeAgo, formatPercent, formatPnlRaw, setCurrentAvgLoss, STATUS_LABELS, richTextPlain, getCurrencySymbol } from '../lib/utils';
 import { Spinner, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
 import MetricCard from '../components/MetricCard';
@@ -29,15 +29,32 @@ function RowLink({ href, primary, secondary, badge }) {
   );
 }
 
-function ResumeBanner() {
+function ResumeBanner({ strategyIds }) {
   const [lastVisit, setLastVisit] = useState(null);
 
   useEffect(() => {
     try {
       const lv = JSON.parse(localStorage.getItem('lastVisit'));
-      if (lv?.hash) setLastVisit(lv);
+      if (!lv?.hash) return;
+      // Validate the lastVisit references a resource owned by the current user
+      const m = lv.hash.match(/^\/(strategy|variant|run)\/([^/]+)/);
+      if (m && strategyIds) {
+        // For strategy pages, check directly; for variant/run, try to validate via API
+        if (m[1] === 'strategy' && !strategyIds.has(m[2])) {
+          localStorage.removeItem('lastVisit');
+          return;
+        }
+        // For variant/run: validate ownership via a quick fetch
+        if (m[1] === 'variant' || m[1] === 'run') {
+          API.get(`/${m[1]}s/${m[2]}`).then(() => setLastVisit(lv)).catch(() => {
+            localStorage.removeItem('lastVisit');
+          });
+          return;
+        }
+      }
+      setLastVisit(lv);
     } catch {}
-  }, []);
+  }, [strategyIds]);
 
   if (!lastVisit) return null;
   const ago = timeAgo(lastVisit.ts);
@@ -98,6 +115,7 @@ export default function Dashboard({ onNewStrategy }) {
 
   if (!strategies || !activity) return <Spinner />;
 
+  const strategyIds = new Set(strategies.map(s => s.id));
   const hasActivity = (activity.recent_variants?.length > 0) ||
     (activity.recent_runs?.length > 0) ||
     (activity.to_review?.length > 0) ||
@@ -110,7 +128,7 @@ export default function Dashboard({ onNewStrategy }) {
         <button onClick={onNewStrategy} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Stratégie</button>
       </div>
 
-      <ResumeBanner />
+      <ResumeBanner strategyIds={strategyIds} />
 
       {hasActivity && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
@@ -146,7 +164,7 @@ export default function Dashboard({ onNewStrategy }) {
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.best_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.best_variant.strategy_name}</p>
                       <p className={`text-sm font-semibold mt-0.5 ${activity.best_variant.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {activity.best_variant.total_pnl >= 0 ? '+' : ''}{activity.best_variant.total_pnl.toFixed(2)}
+                        {activity.best_variant.total_pnl >= 0 ? '+' : ''}{getCurrencySymbol()}{activity.best_variant.total_pnl.toFixed(2)}
                       </p>
                     </Link>
                   </div>
@@ -158,7 +176,7 @@ export default function Dashboard({ onNewStrategy }) {
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.worst_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.worst_variant.strategy_name}</p>
                       <p className={`text-sm font-semibold mt-0.5 ${activity.worst_variant.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {activity.worst_variant.total_pnl >= 0 ? '+' : ''}{activity.worst_variant.total_pnl.toFixed(2)}
+                        {activity.worst_variant.total_pnl >= 0 ? '+' : ''}{getCurrencySymbol()}{activity.worst_variant.total_pnl.toFixed(2)}
                       </p>
                     </Link>
                   </div>

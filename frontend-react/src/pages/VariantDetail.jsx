@@ -6,7 +6,7 @@ import {
   formatDate, formatPercent, setCurrentAvgLoss, getUnitSettings,
   STATUS_LABELS, normalizeRichValue, richTextPlain,
 } from '../lib/utils';
-import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownSpan, RichDisplay, MetricCard, EmptyState } from '../components/UI';
+import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownCard, RichDisplay, MetricCard, EmptyState } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MonthlyHeatmap, UnderwaterChart, EquityChart } from '../components/ProCharts';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
@@ -359,17 +359,34 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Aggregated metrics */}
       {aggMetrics && aggMetrics.total_trades > 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">
-            Métriques agrégées — {data.runs?.length || 0} run{(data.runs?.length || 0) > 1 ? 's' : ''}
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
+              Métriques agrégées — {data.runs?.length || 0} run{(data.runs?.length || 0) > 1 ? 's' : ''}
+            </h2>
+            <div className="flex items-center gap-2">
+              {aggMetrics.mixed_currencies && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">
+                  Mixed currencies
+                </span>
+              )}
+              {aggMetrics.currency && (
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">
+                  {aggMetrics.currency}
+                </span>
+              )}
+            </div>
+          </div>
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
             <MetricCard label="Total PnL"><PnlSpan value={aggMetrics.total_pnl} /></MetricCard>
+            <MetricCard label="Return %">{aggMetrics.total_return_pct != null ? (aggMetrics.total_return_pct * 100).toFixed(2) + '%' : '—'}</MetricCard>
             <MetricCard label="Trades">{aggMetrics.total_trades}</MetricCard>
             <MetricCard label="Win Rate">{formatPercent(aggMetrics.win_rate)}</MetricCard>
             <MetricCard label="Profit Factor">{aggMetrics.profit_factor != null ? aggMetrics.profit_factor.toFixed(2) : '—'}</MetricCard>
             <MetricCard label="Expectancy"><PnlSpan value={aggMetrics.expectancy} /></MetricCard>
             <MetricCard label="RR Moyen">{rr != null ? rr.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Max Drawdown"><DrawdownSpan value={aggMetrics.max_drawdown} ddPeak={ddPeak} /></MetricCard>
+            <DrawdownCard value={aggMetrics.max_drawdown} ddPeak={ddPeak} pctTrue={aggMetrics.max_drawdown_pct_true} size="sm" />
+            <MetricCard label="Sharpe (ann.)">{aggMetrics.sharpe_ratio != null ? aggMetrics.sharpe_ratio.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Sortino (ann.)">{aggMetrics.sortino_ratio != null ? aggMetrics.sortino_ratio.toFixed(2) : '—'}</MetricCard>
             <MetricCard label="Recovery Factor">{aggMetrics.recovery_factor != null ? aggMetrics.recovery_factor.toFixed(2) : '—'}</MetricCard>
             <MetricCard label="Avg Win"><PnlSpan value={aggMetrics.avg_win} /></MetricCard>
             <MetricCard label="Avg Loss"><PnlSpan value={aggMetrics.avg_loss} /></MetricCard>
@@ -385,9 +402,9 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Charts */}
       {aggMetrics && aggMetrics.total_trades > 0 && (
         <>
-          <EquityChart equityCurve={aggMetrics.equity_curve} />
+          <EquityChart equityCurve={aggMetrics.equity_curve} initialBalance={data.runs?.[0]?.initial_balance ?? getUnitSettings().initial_balance} />
           <MonthlyHeatmap monthlyBreakdown={aggMetrics.monthly_breakdown} />
-          <UnderwaterChart underwater={aggMetrics.underwater} equityCurve={aggMetrics.equity_curve} />
+          <UnderwaterChart underwater={aggMetrics.underwater} underwaterPct={aggMetrics.underwater_pct} equityCurve={aggMetrics.equity_curve} />
         </>
       )}
 
@@ -409,6 +426,7 @@ export default function VariantDetail({ setCompareSlotA }) {
                     <h3 className="font-medium text-white group-hover:text-blue-400 transition">{r.label}</h3>
                     <div className="flex gap-3 text-xs text-slate-400 mt-1">
                       <span className="uppercase bg-slate-700 px-2 py-0.5 rounded">{r.type}</span>
+                      {r.currency && <span className="bg-slate-700 px-2 py-0.5 rounded">{r.currency}</span>}
                       <span>{formatDate(r.start_date)} → {formatDate(r.end_date)}</span>
                     </div>
                   </div>

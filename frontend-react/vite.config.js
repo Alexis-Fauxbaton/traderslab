@@ -9,6 +9,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: 'all',
     proxy: {
+      '/auth': 'http://localhost:8000',
       '/strategies': 'http://localhost:8000',
       '/variants': 'http://localhost:8000',
       '/runs': 'http://localhost:8000',

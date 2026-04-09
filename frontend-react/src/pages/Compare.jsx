@@ -7,7 +7,7 @@ import API from '../lib/api';
 import { useSidebar } from '../hooks/useSidebar';
 import {
   formatDate, formatPercent, setCurrentAvgLoss, getUnitSettings,
-  STATUS_LABELS,
+  STATUS_LABELS, getCurrencySymbol,
 } from '../lib/utils';
 import { Spinner, StatusBadge, PnlSpan, DrawdownSpan } from '../components/UI';
 import { ComparisonEvaluationPanel } from '../components/EvaluationPanel';
@@ -289,28 +289,37 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
   const _unitSettings = getUnitSettings();
 
   // Metric formatting helpers
-  const fmtVal = (val, fmt, ddPeak, avgLoss) => {
+  const [ddMode, setDdMode] = useState('amount'); // 'amount' | 'pct'
+  const fmtVal = (val, fmt, ddPeak, avgLoss, metrics) => {
     if (val == null) return '—';
     if (fmt === 'pct') return formatPercent(val);
     if (fmt === 'num') return val.toFixed(2);
     if (fmt === 'int') return String(val);
     setCurrentAvgLoss(avgLoss);
-    if (fmt === 'dd') return <DrawdownSpan value={val} ddPeak={_unitSettings.initial_balance + (ddPeak || 0)} />;
+    if (fmt === 'dd') {
+      if (ddMode === 'pct' && metrics?.max_drawdown_pct_true != null) {
+        return <span className="text-red-400">{(-metrics.max_drawdown_pct_true * 100).toFixed(2)}%</span>;
+      }
+      return <DrawdownSpan value={val} ddPeak={_unitSettings.initial_balance + (ddPeak || 0)} />;
+    }
     return <PnlSpan value={val} />;
   };
 
   const metricRows = [
     { key: 'total_pnl', label: 'Total PnL' },
+    { key: 'total_return_pct', label: 'Return %', fmt: 'pct' },
     { key: 'total_trades', label: 'Trades', fmt: 'int' },
     { key: 'win_rate', label: 'Win Rate', fmt: 'pct' },
     { key: 'profit_factor', label: 'Profit Factor', fmt: 'num' },
-    { key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd' },
+    { key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd', toggleable: true },
     { key: 'expectancy', label: 'Expectancy' },
     { key: 'avg_win', label: 'Avg Win' },
     { key: 'avg_loss', label: 'Avg Loss' },
     { key: 'best_trade', label: 'Best Trade' },
     { key: 'worst_trade', label: 'Worst Trade' },
     { key: 'sharpe_ratio', label: 'Sharpe (ann.)', fmt: 'num' },
+    { key: 'sortino_ratio', label: 'Sortino (ann.)', fmt: 'num' },
+    { key: 'recovery_factor', label: 'Recovery Factor', fmt: 'num' },
   ];
 
   // Fetch V1 comparison analysis from backend
@@ -407,12 +416,22 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
             {/* Variant info cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-1"><h3 className="font-semibold text-white">{a.name}</h3><StatusBadge status={a.status} /></div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-white">{a.name}</h3>
+                  <StatusBadge status={a.status} />
+                  {a.latest_run?.currency && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{a.latest_run.currency}</span>}
+                  {a.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Mixed</span>}
+                </div>
                 <p className="text-xs text-slate-400 mb-1">Hypothèse: {a.hypothesis || '—'}</p>
                 <p className="text-xs text-slate-400">Décision: {a.decision || '—'}</p>
               </div>
               <div className="bg-slate-800 border border-slate-700 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-1"><h3 className="font-semibold text-white">{b.name}</h3><StatusBadge status={b.status} /></div>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="font-semibold text-white">{b.name}</h3>
+                  <StatusBadge status={b.status} />
+                  {b.latest_run?.currency && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{b.latest_run.currency}</span>}
+                  {b.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Mixed</span>}
+                </div>
                 <p className="text-xs text-slate-400 mb-1">Hypothèse: {b.hypothesis || '—'}</p>
                 <p className="text-xs text-slate-400">Décision: {b.decision || '—'}</p>
               </div>
@@ -436,14 +455,30 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                     <tbody>
                       {metricRows.map(r => (
                         <tr key={r.key} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                          <td className="py-2.5 px-4 text-slate-300">{r.label}</td>
+                          <td className="py-2.5 px-4 text-slate-300">
+                            {r.toggleable ? (
+                              <span className="flex items-center gap-1">
+                                {r.label}
+                                <button
+                                  onClick={() => setDdMode(m => m === 'amount' ? 'pct' : 'amount')}
+                                  className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition
+                                    bg-slate-700/80 border-slate-500/50 text-slate-200 hover:bg-slate-600 hover:border-slate-400 active:scale-95"
+                                  title="Basculer entre montant et %"
+                                >
+                                  <span className={ddMode === 'amount' ? 'text-white' : 'text-slate-500'}>{getCurrencySymbol()}</span>
+                                  <span className="text-slate-600">/</span>
+                                  <span className={ddMode === 'pct' ? 'text-white' : 'text-slate-500'}>%</span>
+                                </button>
+                              </span>
+                            ) : r.label}
+                          </td>
                           <td className={`py-2.5 px-4 text-center ${diff[r.key] === 'A' ? 'bg-green-900/20' : ''}`}>
-                            {fmtVal(ma[r.key], r.fmt, ma.dd_peak_equity, ma.avg_loss)}
+                            {fmtVal(ma[r.key], r.fmt, ma.dd_peak_equity, ma.avg_loss, ma)}
                             {diff[r.key] === 'A' && <span className="text-green-400 text-xs ml-1">✓</span>}
                           </td>
                           <td className="py-2.5 px-4 text-center text-slate-600">vs</td>
                           <td className={`py-2.5 px-4 text-center ${diff[r.key] === 'B' ? 'bg-green-900/20' : ''}`}>
-                            {fmtVal(mb[r.key], r.fmt, mb.dd_peak_equity, mb.avg_loss)}
+                            {fmtVal(mb[r.key], r.fmt, mb.dd_peak_equity, mb.avg_loss, mb)}
                             {diff[r.key] === 'B' && <span className="text-green-400 text-xs ml-1">✓</span>}
                           </td>
                         </tr>

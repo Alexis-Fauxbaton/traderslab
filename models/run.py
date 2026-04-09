@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, JSON
+from sqlalchemy import Column, String, DateTime, Date, Float, ForeignKey, JSON
 from database import Base
 
 
@@ -15,4 +15,7 @@ class Run(Base):
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
     imported_at = Column(DateTime, default=datetime.utcnow)
+    initial_balance = Column(Float, nullable=True, default=10000.0)
+    currency = Column(String, nullable=True, default="USD")
+    currency_source = Column(String, nullable=True, default="detected")  # detected | inherited
     metrics = Column(JSON, nullable=True)

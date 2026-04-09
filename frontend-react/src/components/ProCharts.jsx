@@ -3,23 +3,42 @@ import { Chart } from 'chart.js';
 
 /**
  * Equity Curve Chart — large PnL evolution line chart with zoom.
- * Props: equityCurve = [{ date, cumulative_pnl }, ...]
+ * Props: equityCurve = [{ date, cumulative_pnl }, ...], initialBalance = number
  */
-export function EquityChart({ equityCurve }) {
+export function EquityChart({ equityCurve, initialBalance: propBalance = 10000 }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [mode, setMode] = useState('trade'); // 'trade' | 'day'
+  const [dataMode, setDataMode] = useState('pnl'); // 'pnl' | 'equity'
 
   useEffect(() => {
     if (!equityCurve?.length || !canvasRef.current) return;
     if (chartRef.current) chartRef.current.destroy();
 
-    const labels = equityCurve.map(p => {
-      const d = new Date(p.date);
-      return d.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
-    });
-    const values = equityCurve.map(p => p.cumulative_pnl);
-    const color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
+    // Aggregate by day if needed
+    let chartPoints;
+    if (mode === 'day') {
+      const byDay = new Map();
+      for (const p of equityCurve) {
+        const day = p.date.slice(0, 10);
+        byDay.set(day, p.cumulative_pnl);
+      }
+      chartPoints = Array.from(byDay, ([date, cumulative_pnl]) => ({ date, cumulative_pnl }));
+    } else {
+      chartPoints = equityCurve;
+    }
+
+    const labels = mode === 'trade'
+      ? chartPoints.map((p, i) => p.trade_index ?? i + 1)
+      : chartPoints.map(p => {
+          const d = new Date(p.date);
+          return d.toLocaleDateString('fr-FR', { month: 'short', day: 'numeric' });
+        });
+    const initialBalance = dataMode === 'equity' ? propBalance : 0;
+    const values = chartPoints.map(p => p.cumulative_pnl + initialBalance);
+    const lastVal = values[values.length - 1];
+    const color = (dataMode === 'equity' ? lastVal > initialBalance : lastVal >= 0) ? '#22c55e' : '#ef4444';
     const bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
 
     chartRef.current = new Chart(canvasRef.current.getContext('2d'), {
@@ -51,19 +70,21 @@ export function EquityChart({ equityCurve }) {
           },
           tooltip: {
             callbacks: {
-              label: (ctx) => `PnL: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`,
+              label: (ctx) => dataMode === 'equity'
+                ? `Equity: ${ctx.parsed.y.toFixed(2)}`
+                : `PnL: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`,
             },
           },
         },
         scales: {
           x: { ticks: { color: '#94a3b8', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          y: { beginAtZero: false, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
         },
       },
     });
 
     return () => { if (chartRef.current) chartRef.current.destroy(); };
-  }, [equityCurve]);
+  }, [equityCurve, mode, dataMode]);
 
   const resetZoom = () => {
     if (chartRef.current) { chartRef.current.resetZoom(); setIsZoomed(false); }
@@ -75,11 +96,29 @@ export function EquityChart({ equityCurve }) {
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Évolution du PnL</h3>
-        {isZoomed && (
-          <button onClick={resetZoom} className="text-xs text-blue-400 hover:text-blue-300 transition">Réinitialiser zoom</button>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+            <button onClick={() => setDataMode('pnl')}
+              className={`px-3 py-1 transition ${dataMode === 'pnl' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+            >PnL</button>
+            <button onClick={() => setDataMode('equity')}
+              className={`px-3 py-1 transition ${dataMode === 'equity' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+            >Equity</button>
+          </div>
+          <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+            <button onClick={() => setMode('trade')}
+              className={`px-3 py-1 transition ${mode === 'trade' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+            >Par trade</button>
+            <button onClick={() => setMode('day')}
+              className={`px-3 py-1 transition ${mode === 'day' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+            >Par jour</button>
+          </div>
+          {isZoomed && (
+            <button onClick={resetZoom} className="text-xs text-blue-400 hover:text-blue-300 transition">Réinitialiser zoom</button>
+          )}
+        </div>
       </div>
-      <div style={{ height: 280 }}><canvas ref={canvasRef} /></div>
+      <div style={{ height: 280 }}><canvas key={dataMode} ref={canvasRef} /></div>
     </div>
   );
 }
@@ -161,14 +200,19 @@ export function MonthlyHeatmap({ monthlyBreakdown }) {
  * Underwater Chart — drawdown over time.
  * Props: underwater = [-10, -5, -30, ...], equityCurve = [{ date, cumulative_pnl }, ...]
  */
-export function UnderwaterChart({ underwater, equityCurve }) {
+export function UnderwaterChart({ underwater, underwaterPct, equityCurve }) {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
+  const [mode, setMode] = useState('prix'); // 'prix' | 'pct'
 
   useEffect(() => {
     if (!underwater || underwater.length === 0) return;
     if (!canvasRef.current) return;
     if (chartRef.current) chartRef.current.destroy();
+
+    const isPct = mode === 'pct';
+    const hasPct = underwaterPct?.length > 0;
+    const data = isPct && hasPct ? underwaterPct : underwater;
 
     const labels = equityCurve && equityCurve.length === underwater.length
       ? equityCurve.map(p => {
@@ -183,7 +227,7 @@ export function UnderwaterChart({ underwater, equityCurve }) {
         labels,
         datasets: [{
           label: 'Underwater',
-          data: underwater,
+          data,
           borderColor: '#ef4444',
           backgroundColor: 'rgba(239, 68, 68, 0.15)',
           fill: true,
@@ -197,19 +241,38 @@ export function UnderwaterChart({ underwater, equityCurve }) {
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { color: '#94a3b8', maxTicksLimit: 15 }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' }, max: 0 },
+          y: {
+            ticks: {
+              color: '#94a3b8',
+              callback: (isPct && hasPct) ? (v) => v.toFixed(1) + ' %' : undefined,
+            },
+            grid: { color: '#1e293b' },
+            max: 0,
+          },
         },
       },
     });
 
     return () => { if (chartRef.current) chartRef.current.destroy(); };
-  }, [underwater, equityCurve]);
+  }, [underwater, underwaterPct, equityCurve, mode]);
 
   if (!underwater || underwater.length < 2) return null;
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
-      <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Underwater (Drawdown)</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Underwater (Drawdown)</h3>
+        <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+          <button
+            onClick={() => setMode('prix')}
+            className={`px-3 py-1 transition ${mode === 'prix' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+          >Prix</button>
+          <button
+            onClick={() => setMode('pct')}
+            className={`px-3 py-1 transition ${mode === 'pct' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+          >%</button>
+        </div>
+      </div>
       <div style={{ height: 200 }}><canvas ref={canvasRef} /></div>
     </div>
   );

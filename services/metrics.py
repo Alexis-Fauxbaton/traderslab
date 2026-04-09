@@ -139,15 +139,25 @@ def _compute_consistency_score(monthly_breakdown: list[dict]) -> float | None:
     return round(min(100, max(0, score)), 1)
 
 
-def _compute_underwater(cumulative_values: list[float]) -> list[float]:
-    """Retourne la série des drawdowns (valeurs négatives) pour l'underwater chart."""
+def _compute_underwater(cumulative_values: list[float], initial_balance: float = 10_000.0) -> tuple[list[float], list[float]]:
+    """Retourne (underwater_abs, underwater_pct) pour l'underwater chart.
+    underwater_abs = drawdown en unité de prix (valeurs <= 0)
+    underwater_pct = drawdown en % de l'equity au pic (valeurs <= 0)
+    """
     underwater = []
+    underwater_pct = []
     peak = 0.0
     for val in cumulative_values:
         if val > peak:
             peak = val
-        underwater.append(round(val - peak, 2))
-    return underwater
+        dd = round(val - peak, 2)
+        underwater.append(dd)
+        peak_equity = initial_balance + peak
+        if peak_equity > 0:
+            underwater_pct.append(round(dd / peak_equity * 100, 2))
+        else:
+            underwater_pct.append(0.0)
+    return underwater, underwater_pct
 
 
 def _compute_distribution_stats(pnls: list[float]) -> dict:
@@ -326,11 +336,12 @@ def _compute_split_half(pnls: list[float]) -> dict | None:
     }
 
 
-def compute_metrics(trades: list[dict]) -> dict:
+def compute_metrics(trades: list[dict], initial_balance: float = 10_000.0) -> dict:
     """Calcule toutes les métriques de performance depuis une liste de trades.
 
     Le max_drawdown est calculé sur la equity curve cumulée (cumsum du PnL),
     PAS trade par trade — c'est la méthode correcte.
+    initial_balance : capital initial pour les calculs de DD%.
     """
     if not trades:
         return {
@@ -339,11 +350,13 @@ def compute_metrics(trades: list[dict]) -> dict:
             "profit_factor": None,
             "max_drawdown": 0.0,
             "max_drawdown_pct": None,
+            "max_drawdown_pct_true": None,
             "dd_peak_equity": 0.0,
             "dd_start_idx": 0,
             "dd_end_idx": 0,
             "expectancy": 0.0,
             "total_pnl": 0.0,
+            "total_return_pct": None,
             "avg_win": 0.0,
             "avg_loss": 0.0,
             "best_trade": 0.0,
@@ -363,6 +376,7 @@ def compute_metrics(trades: list[dict]) -> dict:
             "ttest": None,
             "monte_carlo": None,
             "split_half": None,
+            "dd_ib_aware": True,
         }
 
     # Tri chronologique par close_time
@@ -427,17 +441,32 @@ def compute_metrics(trades: list[dict]) -> dict:
             dd_start_idx = peak_idx
             dd_end_idx = i
 
-    # Max drawdown en pourcentage du pic d'equity (ratio négatif, ex: -0.07 = 7%)
-    # Si le pic est à 0 (equity jamais positive), le ratio n'est pas calculable.
+    # Max drawdown en % = drawdown / peak_equity (incluant initial_balance)
+    peak_equity = initial_balance + dd_peak
     max_drawdown_pct = None
-    if dd_peak > 0 and max_drawdown > 0:
-        max_drawdown_pct = round(-(max_drawdown / dd_peak), 4)
+    if peak_equity > 0 and max_drawdown > 0:
+        max_drawdown_pct = round(-(max_drawdown / peak_equity), 4)
+
+    # True max DD% — may differ from max $ DD period
+    max_drawdown_pct_true = None
+    _peak_cum = 0.0
+    _worst_pct = 0.0
+    for val in cumulative_values:
+        if val > _peak_cum:
+            _peak_cum = val
+        eq_peak = initial_balance + _peak_cum
+        if eq_peak > 0:
+            dd_pct = (_peak_cum - val) / eq_peak
+            if dd_pct > _worst_pct:
+                _worst_pct = dd_pct
+    if _worst_pct > 0:
+        max_drawdown_pct_true = round(-_worst_pct, 4)
 
     # ---- Nouvelles métriques Pro ----
     streaks = _compute_streaks(pnls)
     monthly_breakdown = _compute_monthly_breakdown(sorted_trades)
     consistency_score = _compute_consistency_score(monthly_breakdown)
-    underwater = _compute_underwater(cumulative_values)
+    underwater, underwater_pct = _compute_underwater(cumulative_values, initial_balance)
     distribution = _compute_distribution_stats(pnls)
     ttest = _compute_ttest(pnls)
     monte_carlo = _compute_monte_carlo(pnls)
@@ -469,11 +498,13 @@ def compute_metrics(trades: list[dict]) -> dict:
         "profit_factor": round(profit_factor, 4) if profit_factor is not None else None,
         "max_drawdown": round(max_drawdown, 2),
         "max_drawdown_pct": max_drawdown_pct,
+        "max_drawdown_pct_true": max_drawdown_pct_true,
         "dd_peak_equity": round(dd_peak, 2),
         "dd_start_idx": dd_start_idx,
         "dd_end_idx": dd_end_idx,
         "expectancy": round(expectancy, 2),
         "total_pnl": round(total_pnl, 2),
+        "total_return_pct": round(total_pnl / initial_balance, 4) if initial_balance > 0 else None,
         "avg_win": round(avg_win, 2),
         "avg_loss": round(avg_loss, 2),
         "best_trade": round(best_trade, 2),
@@ -489,8 +520,10 @@ def compute_metrics(trades: list[dict]) -> dict:
         "monthly_breakdown": monthly_breakdown,
         "consistency_score": consistency_score,
         "underwater": underwater,
+        "underwater_pct": underwater_pct,
         "distribution": distribution,
         "ttest": ttest,
         "monte_carlo": monte_carlo,
         "split_half": split_half,
+        "dd_ib_aware": True,
     }

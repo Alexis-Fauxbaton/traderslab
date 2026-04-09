@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { SidebarProvider } from './hooks/useSidebar';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import { Spinner } from './components/UI';
@@ -20,6 +21,8 @@ const VariantDetail = lazy(() => import('./pages/VariantDetail'));
 const RunDetail = lazy(() => import('./pages/RunDetail'));
 const ImportCSV = lazy(() => import('./pages/ImportCSV'));
 const Compare = lazy(() => import('./pages/Compare'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
 
 function getPageDepth(path) {
   if (!path || path === '/') return 0;
@@ -32,6 +35,7 @@ function getPageDepth(path) {
 }
 
 function AppInner() {
+  const { user, logout, updateUser, loading: authLoading } = useAuth();
   const { reload } = useSidebar();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showNewStrat, setShowNewStrat] = useState(false);
@@ -70,9 +74,24 @@ function AppInner() {
     window.location.hash = '#/import/' + v.id;
   }, [reload]);
 
+  if (authLoading) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
+
+  // Public routes (login/register)
+  if (!user) {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen">
-      <Navbar onToggleSidebar={toggleSidebar} />
+      <Navbar onToggleSidebar={toggleSidebar} onLogout={logout} user={user} onUpdateUser={updateUser} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar collapsed={sidebarCollapsed} onNewStrategy={() => setShowNewStrat(true)} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">
@@ -110,8 +129,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <SidebarProvider>
-      <AppInner />
-    </SidebarProvider>
+    <AuthProvider>
+      <SidebarProvider>
+        <AppInner />
+      </SidebarProvider>
+    </AuthProvider>
   );
 }

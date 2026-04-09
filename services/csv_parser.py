@@ -23,6 +23,9 @@ DEFAULT_MAPPING = {
     "pnl": "rPnL",
 }
 
+# Noms de colonnes connues pour la balance initiale (insensible à la casse)
+_BALANCE_COLUMNS = {"initialbalance", "initial_balance", "balance"}
+
 
 def _normalize_side(value: str) -> str:
     """Normalise le champ side : buy/BUY/long → long, sell/SELL/short → short."""
@@ -34,18 +37,102 @@ def _normalize_side(value: str) -> str:
     raise ValueError(f"Valeur de side non reconnue : '{value}'")
 
 
+def _detect_currency(df: pd.DataFrame) -> str | None:
+    """Tente de détecter la devise du compte depuis le CSV.
+
+    Stratégies :
+    1. Colonne 'currency' / 'accountCurrency' / 'base_currency' → première valeur non-vide
+    2. Colonne 'Currency Deposit' (MT5) → première valeur non-vide
+    """
+    cols_lower = {c.strip().lower(): c for c in df.columns}
+
+    for candidate in ("currency", "accountcurrency", "base_currency", "currency deposit"):
+        if candidate in cols_lower:
+            col = cols_lower[candidate]
+            vals = df[col].dropna().astype(str).str.strip()
+            vals = vals[vals != ""]
+            if len(vals) > 0:
+                return vals.iloc[0].upper()
+
+    return None
+
+
+def _detect_initial_balance(df: pd.DataFrame, mapping: dict[str, str]) -> float | None:
+    """Tente de détecter la balance initiale depuis le CSV.
+
+    Stratégies (par ordre de priorité) :
+    1. Colonne 'initialBalance' / 'initial_balance' (FX Replay) → première valeur non-nulle
+    2. Colonne 'Balance' (MT5) → Balance - Profit sur la première ligne de trade
+    3. Ligne de type 'balance' (MT5) → valeur Profit de cette ligne (= dépôt)
+    """
+    cols_lower = {c.strip().lower(): c for c in df.columns}
+
+    # 1. Colonne dédiée initialBalance / initial_balance
+    for candidate in ("initialbalance", "initial_balance"):
+        if candidate in cols_lower:
+            col = cols_lower[candidate]
+            val = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(val) > 0 and val.iloc[0] > 0:
+                return float(val.iloc[0])
+
+    # 2. Colonne 'balance' + colonne 'profit' (format MT5)
+    if "balance" in cols_lower:
+        bal_col = cols_lower["balance"]
+        # Trouver la colonne profit
+        profit_col = None
+        for p in ("profit", "pnl", "rpnl"):
+            if p in cols_lower:
+                profit_col = cols_lower[p]
+                break
+        # Aussi chercher via le mapping
+        if profit_col is None:
+            pnl_csv_col = mapping.get("pnl")
+            if pnl_csv_col and pnl_csv_col in df.columns:
+                profit_col = pnl_csv_col
+
+        # Chercher d'abord une ligne de type "balance" (dépôt MT5)
+        type_col = None
+        for t in ("type", "side"):
+            if t in cols_lower:
+                type_col = cols_lower[t]
+                break
+        if type_col is not None:
+            balance_rows = df[df[type_col].astype(str).str.strip().str.lower() == "balance"]
+            if len(balance_rows) > 0:
+                deposit_val = pd.to_numeric(balance_rows.iloc[0].get(profit_col or bal_col), errors="coerce")
+                if pd.notna(deposit_val) and deposit_val > 0:
+                    return float(deposit_val)
+
+        # Sinon : Balance - Profit sur la première ligne réelle
+        if profit_col is not None:
+            # Filtrer les lignes qui ne sont pas des opérations de balance
+            trade_rows = df
+            if type_col is not None:
+                trade_rows = df[df[type_col].astype(str).str.strip().str.lower() != "balance"]
+            if len(trade_rows) > 0:
+                first = trade_rows.iloc[0]
+                bal = pd.to_numeric(first[bal_col], errors="coerce")
+                pft = pd.to_numeric(first[profit_col], errors="coerce")
+                if pd.notna(bal) and pd.notna(pft) and bal > 0:
+                    initial = bal - pft
+                    if initial > 0:
+                        return float(initial)
+
+    return None
+
+
 def parse_csv(
     file_content: bytes,
     column_mapping: dict[str, str] | None = None,
-) -> tuple[list[dict], list[str]]:
-    """Parse un fichier CSV et retourne (trades_valides, erreurs_par_ligne).
+) -> tuple[list[dict], list[str], float | None, str | None]:
+    """Parse un fichier CSV et retourne (trades_valides, erreurs_par_ligne, initial_balance, currency).
 
     Args:
         file_content: contenu brut du fichier CSV.
         column_mapping: mapping {champ_interne: nom_colonne_csv}. Si None, utilise le format FX Replay.
 
     Returns:
-        Tuple (liste de dicts trades, liste de messages d'erreur).
+        Tuple (liste de dicts trades, liste de messages d'erreur, balance initiale détectée ou None, devise détectée ou None).
     """
     mapping = column_mapping or DEFAULT_MAPPING
 
@@ -53,17 +140,26 @@ def parse_csv(
     # Nettoyage espaces dans les noms de colonnes
     df.columns = df.columns.str.strip()
 
+    # Détecter la balance initiale et la devise avant le filtrage
+    detected_balance = _detect_initial_balance(df, mapping)
+    detected_currency = _detect_currency(df)
+
     # Vérifier que les colonnes du mapping existent (sauf pips qui est optionnel)
     missing = []
     for field, csv_col in mapping.items():
         if csv_col not in df.columns and field != "pips":
             missing.append(f"Colonne '{csv_col}' manquante pour le champ '{field}'")
     if missing:
-        return [], missing
+        return [], missing, detected_balance, detected_currency
 
     # Renommage inverse : csv_col → champ_interne
     rename_map = {csv_col: field for field, csv_col in mapping.items() if csv_col in df.columns}
     df = df.rename(columns=rename_map)
+
+    # Filtrer les lignes de type "balance" (dépôts MT5) si présentes
+    cols_lower_renamed = {c.lower(): c for c in df.columns}
+    if "side" in df.columns:
+        df = df[df["side"].astype(str).str.strip().str.lower() != "balance"]
 
     trades: list[dict] = []
     errors: list[str] = []
@@ -103,4 +199,4 @@ def parse_csv(
         except Exception as e:
             errors.append(f"Ligne {line_num}: {e}")
 
-    return trades, errors
+    return trades, errors, detected_balance, detected_currency

@@ -5,7 +5,7 @@ import API from '../lib/api';
 import {
   formatDate, formatDateTime, formatPercent, setCurrentAvgLoss, getUnitSettings,
 } from '../lib/utils';
-import { Breadcrumb, Spinner, PnlSpan, DrawdownSpan, MetricCardLarge } from '../components/UI';
+import { Breadcrumb, Spinner, PnlSpan, DrawdownCard, MetricCardLarge } from '../components/UI';
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { ProMetricsGrid, MonthlyHeatmap, UnderwaterChart } from '../components/ProCharts';
 
@@ -23,7 +23,9 @@ export default function RunDetail() {
   const [variantName, setVariantName] = useState('Variante');
   const [stratId, setStratId] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
-  const [ddHighlight, setDdHighlight] = useState(false);
+  const [ddHighlight, setDdHighlight] = useState('off'); // 'off' | 'amount' | 'pct'
+  const [equityMode, setEquityMode] = useState('trade'); // 'trade' | 'day'
+  const [equityDataMode, setEquityDataMode] = useState('pnl'); // 'pnl' | 'equity'
   const [runEval, setRunEval] = useState(null);
   const [, setTick] = useState(0);
 
@@ -71,22 +73,63 @@ export default function RunDetail() {
 
     const m = data.metrics;
     const ec = m.equity_curve;
-    const labels = ec.map(p => formatDate(p.date));
-    const values = ec.map(p => p.cumulative_pnl);
-    const color = values[values.length - 1] >= 0 ? '#22c55e' : '#ef4444';
-    const bgColor = values[values.length - 1] >= 0 ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
 
-    // DD calculation
-    const ddData = values.map(() => null);
-    let ddStartIdx = -1, ddEndIdx = 0, ddMax = 0, peakVal = 0, peakIdx = -1;
-    for (let i = 0; i < values.length; i++) {
-      if (values[i] > peakVal) { peakVal = values[i]; peakIdx = i; }
-      const dd = peakVal - values[i];
-      if (dd > ddMax) { ddMax = dd; ddStartIdx = peakIdx; ddEndIdx = i; }
+    // Aggregate by day if needed
+    let chartPoints;
+    if (equityMode === 'day') {
+      const byDay = new Map();
+      for (const p of ec) {
+        const day = p.date.slice(0, 10); // YYYY-MM-DD
+        byDay.set(day, p.cumulative_pnl);
+      }
+      chartPoints = Array.from(byDay, ([date, cumulative_pnl]) => ({ date, cumulative_pnl }));
+    } else {
+      chartPoints = ec;
     }
-    if (ddMax > 0) {
-      const from = ddStartIdx >= 0 ? ddStartIdx : 0;
-      for (let j = from; j <= ddEndIdx; j++) ddData[j] = values[j];
+
+    const labels = equityMode === 'trade'
+      ? chartPoints.map((p, i) => p.trade_index ?? i + 1)
+      : chartPoints.map(p => formatDate(p.date));
+    const initialBalance = equityDataMode === 'equity' ? (data.initial_balance || 10000) : 0;
+    const values = chartPoints.map(p => p.cumulative_pnl + initialBalance);
+    const lastVal = values[values.length - 1];
+    const color = (equityDataMode === 'equity' ? lastVal > initialBalance : lastVal >= 0) ? '#22c55e' : '#ef4444';
+    const bgColor = (equityDataMode === 'equity' ? lastVal > initialBalance : lastVal >= 0) ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)';
+
+    // Running peak per point (for per-point DD tooltip)
+    const _balanceForPct = data.initial_balance || 10000;
+    const toEquityVal = (v) => equityDataMode === 'equity' ? v : v + _balanceForPct;
+    const peaks = [];
+    let _runningPeak = values[0];
+    for (const v of values) { _runningPeak = Math.max(_runningPeak, v); peaks.push(_runningPeak); }
+
+    // DD zone calculation — different zone for $ vs %
+    const ddData = values.map(() => null);
+    let ddStartIdx = -1, ddEndIdx = 0;
+
+    if (ddHighlight === 'pct') {
+      // Max % DD: find peak-to-trough maximizing (peak - val) / peak_equity
+      let ddMaxPct = 0, peakVal = values[0], peakIdx = 0;
+      for (let i = 0; i < values.length; i++) {
+        const eqPeak = toEquityVal(peakVal);
+        if (values[i] > peakVal) { peakVal = values[i]; peakIdx = i; }
+        if (eqPeak > 0) {
+          const pct = (toEquityVal(peakVal) - toEquityVal(values[i])) / toEquityVal(peakVal);
+          if (pct > ddMaxPct) { ddMaxPct = pct; ddStartIdx = peakIdx; ddEndIdx = i; }
+        }
+      }
+    } else {
+      // Max $ DD: find peak-to-trough maximizing absolute drawdown
+      let ddMax = 0, peakVal = 0, peakIdx = -1;
+      for (let i = 0; i < values.length; i++) {
+        if (values[i] > peakVal) { peakVal = values[i]; peakIdx = i; }
+        const dd = peakVal - values[i];
+        if (dd > ddMax) { ddMax = dd; ddStartIdx = peakIdx; ddEndIdx = i; }
+      }
+    }
+
+    if (ddStartIdx >= 0 && ddEndIdx > ddStartIdx) {
+      for (let j = ddStartIdx; j <= ddEndIdx; j++) ddData[j] = values[j];
     }
 
     chartInstanceRef.current = new Chart(chartRef.current.getContext('2d'), {
@@ -94,8 +137,8 @@ export default function RunDetail() {
       data: {
         labels,
         datasets: [
-          { label: 'PnL Cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 6 },
-          { label: 'Max Drawdown', data: ddData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.25)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ef4444', borderWidth: 2, borderDash: [4, 2], hidden: true },
+          { label: equityDataMode === 'equity' ? 'Equity' : 'PnL Cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: equityMode === 'day' ? 3 : (values.length > 200 ? 0 : 2), pointHoverRadius: 6 },
+          { label: 'Max Drawdown', data: ddData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.25)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ef4444', borderWidth: 2, borderDash: [4, 2], hidden: ddHighlight === 'off' },
         ],
       },
       options: {
@@ -109,24 +152,34 @@ export default function RunDetail() {
               onZoom: () => setIsZoomed(true),
             },
           },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => {
+                const v = ctx.parsed.y;
+                if (ctx.datasetIndex === 1) {
+                  const peak = peaks[ctx.dataIndex];
+                  if (ddHighlight === 'pct') {
+                    const eqVal = toEquityVal(v), eqPeak = toEquityVal(peak);
+                    return eqPeak > 0 ? `DD: ${(100 * (eqVal - eqPeak) / eqPeak).toFixed(2)}%` : '—';
+                  }
+                  return `DD: ${(v - peak).toFixed(2)}`;
+                }
+                return equityDataMode === 'equity'
+                  ? `Equity: ${v.toFixed(2)}`
+                  : `PnL: ${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+              },
+            },
+          },
         },
         scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: equityMode === 'day' ? 15 : undefined }, grid: { color: '#1e293b' } },
+          y: { beginAtZero: false, ticks: { color: '#94a3b8' }, grid: { color: '#1e293b' } },
         },
       },
     });
 
     return () => { if (chartInstanceRef.current) chartInstanceRef.current.destroy(); };
-  }, [data]);
-
-  // DD highlight toggle
-  useEffect(() => {
-    if (chartInstanceRef.current?.data?.datasets?.[1]) {
-      chartInstanceRef.current.data.datasets[1].hidden = !ddHighlight;
-      chartInstanceRef.current.update();
-    }
-  }, [ddHighlight]);
+  }, [data, equityMode, equityDataMode, ddHighlight]);
 
   // Fetch V1 analysis from backend
   useEffect(() => {
@@ -148,10 +201,17 @@ export default function RunDetail() {
   setCurrentAvgLoss(m.avg_loss);
   const _ddPeak = _unitSettings.initial_balance + (m.dd_peak_equity || 0);
 
+  // True max DD% from backend (computed on full curve with real initial_balance)
+  const _maxDdPct = m.max_drawdown_pct_true != null ? -m.max_drawdown_pct_true * 100 : null;
+
   const handleDelete = async () => {
     if (!confirm('Supprimer ce run ?')) return;
-    await API.del('/runs/' + id);
-    navigate('/variant/' + data.variant_id);
+    try {
+      await API.del('/runs/' + id);
+      navigate('/variant/' + data.variant_id);
+    } catch (err) {
+      alert('Erreur lors de la suppression : ' + (err.message || err));
+    }
   };
 
   const resetZoom = () => {
@@ -185,7 +245,7 @@ export default function RunDetail() {
         <MetricCardLarge label="Trades">{m.total_trades || 0}</MetricCardLarge>
         <MetricCardLarge label="Win Rate">{formatPercent(m.win_rate)}</MetricCardLarge>
         <MetricCardLarge label="Profit Factor">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</MetricCardLarge>
-        <MetricCardLarge label="Max Drawdown"><DrawdownSpan value={m.max_drawdown} ddPeak={_ddPeak} /></MetricCardLarge>
+        <DrawdownCard value={m.max_drawdown} ddPeak={_ddPeak} pctTrue={m.max_drawdown_pct_true} size="lg" />
         <MetricCardLarge label="Expectancy"><PnlSpan value={m.expectancy} /></MetricCardLarge>
         <MetricCardLarge label="Avg Win"><PnlSpan value={m.avg_win} /></MetricCardLarge>
         <MetricCardLarge label="Avg Loss"><PnlSpan value={m.avg_loss} /></MetricCardLarge>
@@ -208,21 +268,52 @@ export default function RunDetail() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Equity Curve</h2>
           <div className="flex items-center gap-3">
+            <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+              <button onClick={() => setEquityDataMode('pnl')}
+                className={`px-3 py-1 transition ${equityDataMode === 'pnl' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+              >PnL</button>
+              <button onClick={() => setEquityDataMode('equity')}
+                className={`px-3 py-1 transition ${equityDataMode === 'equity' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+              >Equity</button>
+            </div>
+            <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+              <button onClick={() => setEquityMode('trade')}
+                className={`px-3 py-1 transition ${equityMode === 'trade' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+              >Par trade</button>
+              <button onClick={() => setEquityMode('day')}
+                className={`px-3 py-1 transition ${equityMode === 'day' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
+              >Par jour</button>
+            </div>
             {m.max_drawdown > 0 && (
-              <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
-                <input type="checkbox" checked={ddHighlight} onChange={e => setDdHighlight(e.target.checked)} className="accent-red-500" /> Max Drawdown
-              </label>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-500">Max DD</span>
+                <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
+                  <button onClick={() => setDdHighlight('off')}
+                    className={`px-2.5 py-1 transition ${ddHighlight === 'off' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>Off</button>
+                  <button onClick={() => setDdHighlight('amount')}
+                    className={`px-2.5 py-1 transition ${ddHighlight === 'amount' ? 'bg-red-900/50 text-red-300' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>Montant</button>
+                  <button onClick={() => setDdHighlight('pct')}
+                    className={`px-2.5 py-1 transition ${ddHighlight === 'pct' ? 'bg-red-900/50 text-red-300' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>%</button>
+                </div>
+                {ddHighlight !== 'off' && (
+                  <span className="text-xs font-medium text-red-400">
+                    {ddHighlight === 'pct'
+                      ? (_maxDdPct != null ? `-${_maxDdPct.toFixed(2)}%` : '—')
+                      : `-${m.max_drawdown.toFixed(2)}`}
+                  </span>
+                )}
+              </div>
             )}
             {isZoomed && (
               <button onClick={resetZoom} className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1 rounded transition">Reset zoom</button>
             )}
           </div>
         </div>
-        <div style={{ height: 300 }}><canvas ref={chartRef} /></div>
+        <div style={{ height: 300 }}><canvas key={equityDataMode} ref={chartRef} /></div>
       </div>
 
       {/* Underwater */}
-      <UnderwaterChart underwater={m.underwater} equityCurve={m.equity_curve} />
+      <UnderwaterChart underwater={m.underwater} underwaterPct={m.underwater_pct} equityCurve={m.equity_curve} />
 
       {/* Trades table — lazy loaded */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">

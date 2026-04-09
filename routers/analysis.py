@@ -14,9 +14,11 @@ from models.variant import Variant
 from models.strategy import Strategy
 from models.run import Run
 from models.trade import Trade
+from models.user import User
 from schemas.analysis import VariantAnalysisOut, CompareAnalysisOut
 from services.metrics import compute_metrics
 from services.analysis import analyze_variant, compare_variants
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -41,17 +43,19 @@ def _aggregate_trades(variant_id: str, db: Session) -> tuple[list[dict], list[Ru
 
 
 @router.get("/variant/{variant_id}", response_model=VariantAnalysisOut)
-def get_variant_analysis(variant_id: str, db: Session = Depends(get_db)):
+def get_variant_analysis(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Analyse complète V1 d'une variante."""
     variant = db.query(Variant).filter(Variant.id == variant_id).first()
     if not variant:
+        raise HTTPException(404, "Variante introuvable")
+    strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == current_user.id).first()
+    if not strategy:
         raise HTTPException(404, "Variante introuvable")
 
     trade_dicts, runs = _aggregate_trades(variant_id, db)
     metrics = compute_metrics(trade_dicts)
 
     # Contexte enrichi
-    strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id).first()
     parent_variant_name = None
     if variant.parent_variant_id:
         parent = db.query(Variant).filter(Variant.id == variant.parent_variant_id).first()
@@ -73,11 +77,17 @@ def get_variant_analysis(variant_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/run/{run_id}", response_model=VariantAnalysisOut)
-def get_run_analysis(run_id: str, db: Session = Depends(get_db)):
+def get_run_analysis(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Analyse V1 d'un run individuel."""
     run = db.query(Run).filter(Run.id == run_id).first()
     if not run:
         raise HTTPException(404, "Run introuvable")
+    # Verify ownership
+    variant = db.query(Variant).filter(Variant.id == run.variant_id).first()
+    if variant:
+        s = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == current_user.id).first()
+        if not s:
+            raise HTTPException(404, "Run introuvable")
 
     trades = (
         db.query(Trade)
@@ -88,11 +98,8 @@ def get_run_analysis(run_id: str, db: Session = Depends(get_db)):
     trade_dicts = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades]
     metrics = compute_metrics(trade_dicts)
 
-    # Contexte enrichi
-    variant = db.query(Variant).filter(Variant.id == run.variant_id).first()
-    strategy = None
-    if variant:
-        strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id).first()
+    # Contexte enrichi — variant & strategy already loaded above
+    strategy = s
 
     result = analyze_variant(
         metrics,
@@ -110,6 +117,7 @@ def get_compare_analysis(
     variant_a: str = Query(...),
     variant_b: str = Query(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Comparaison V1 de deux variantes."""
     va = db.query(Variant).filter(Variant.id == variant_a).first()
@@ -117,6 +125,12 @@ def get_compare_analysis(
     if not va:
         raise HTTPException(404, f"Variante A introuvable : {variant_a}")
     if not vb:
+        raise HTTPException(404, f"Variante B introuvable : {variant_b}")
+    sa = db.query(Strategy).filter(Strategy.id == va.strategy_id, Strategy.user_id == current_user.id).first()
+    sb = db.query(Strategy).filter(Strategy.id == vb.strategy_id, Strategy.user_id == current_user.id).first()
+    if not sa:
+        raise HTTPException(404, f"Variante A introuvable : {variant_a}")
+    if not sb:
         raise HTTPException(404, f"Variante B introuvable : {variant_b}")
 
     trades_a, _ = _aggregate_trades(variant_a, db)

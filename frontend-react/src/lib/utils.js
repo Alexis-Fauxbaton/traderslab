@@ -51,6 +51,15 @@ export function getUnit() {
   return localStorage.getItem('unitMode') || 'cash';
 }
 
+const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$' };
+
+export function getCurrencySymbol() {
+  try {
+    const u = JSON.parse(localStorage.getItem('user'));
+    return CURRENCY_SYMBOLS[u?.currency] || '$';
+  } catch { return '$'; }
+}
+
 export function convertMetric(value, ctx) {
   if (value == null) return null;
   const unit = getUnit();
@@ -73,22 +82,28 @@ export function unitSuffix() {
   return '';
 }
 
+export function cashPrefix() {
+  return getUnit() === 'cash' ? getCurrencySymbol() : '';
+}
+
 export function formatPnlRaw(n, denom) {
   if (n == null) return { text: '—', cls: '' };
   const v = convertMetric(n, { denom: denom != null ? denom : _unitSettings.initial_balance });
   if (v == null) return { text: '—', cls: '' };
   const cls = v >= 0 ? 'text-green-400' : 'text-red-400';
   const sign = v >= 0 ? '+' : '';
+  const prefix = cashPrefix();
   const suffix = unitSuffix();
-  return { text: sign + v.toFixed(2) + suffix, cls };
+  return { text: sign + prefix + v.toFixed(2) + suffix, cls };
 }
 
 export function formatDrawdownRaw(n, ddPeak) {
   if (n == null) return { text: '—', cls: '' };
   const v = convertMetric(n, { denom: ddPeak || 0 });
   if (v == null) return { text: '—', cls: '' };
+  const prefix = cashPrefix();
   const suffix = unitSuffix();
-  return { text: '-' + v.toFixed(2) + suffix, cls: 'text-red-400' };
+  return { text: '-' + prefix + v.toFixed(2) + suffix, cls: 'text-red-400' };
 }
 
 // Rich text helpers

@@ -25,4 +25,7 @@ export const pageCache = {
       if (k.startsWith(prefix)) cache.delete(k);
     }
   },
+  clear() {
+    cache.clear();
+  },
 };
