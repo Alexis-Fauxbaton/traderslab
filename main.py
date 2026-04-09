@@ -1,11 +1,15 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from database import engine, Base, run_migrations, SessionLocal
-from routers import strategies, variants, runs, compare
+from models.user import User  # noqa: F401 — ensure users table is created
+from routers import strategies, variants, runs, compare, analysis, auth
 
 # Création des tables au démarrage
 Base.metadata.create_all(bind=engine)
@@ -26,10 +30,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(strategies.router)
 app.include_router(variants.router)
 app.include_router(runs.router)
 app.include_router(compare.router)
+app.include_router(analysis.router)
 
 
 @app.on_event("startup")

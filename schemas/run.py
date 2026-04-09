@@ -11,6 +11,9 @@ class RunOut(BaseModel):
     start_date: date | None
     end_date: date | None
     imported_at: datetime
+    initial_balance: float | None = 10000.0
+    currency: str | None = "USD"
+    currency_source: str | None = "detected"
     metrics: dict[str, Any] | None
 
     model_config = {"from_attributes": True}
@@ -26,6 +29,8 @@ class RunImportResponse(BaseModel):
     nb_trades_imported: int
     warnings: list[str]
     metrics: dict[str, Any]
+    initial_balance: float
+    currency: str
 
 
 class TradesPaginated(BaseModel):

@@ -21,6 +21,7 @@ export default function MiniChart({ data, height = 60 }) {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
+        layout: { padding: 0 },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
         scales: { x: { display: false }, y: { display: false } },
         interaction: { enabled: false },

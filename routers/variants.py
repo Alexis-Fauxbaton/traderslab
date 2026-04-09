@@ -5,6 +5,7 @@ from database import get_db
 from models.variant import Variant
 from models.strategy import Strategy
 from models.run import Run
+from models.user import User
 from schemas.variant import (
     VariantCreate,
     VariantUpdate,
@@ -13,12 +14,28 @@ from schemas.variant import (
     VariantLineageNode,
 )
 from schemas.run import RunOut
+from services.aggregation import recompute_variant_metrics, _run_metrics_stale
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/variants", tags=["variants"])
 
 
+def _verify_variant_owner(variant_id: str, db: Session, user: User) -> Variant:
+    """Get variant and verify ownership through strategy."""
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if not variant:
+        raise HTTPException(404, "Variante introuvable")
+    strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == user.id).first()
+    if not strategy:
+        raise HTTPException(404, "Variante introuvable")
+    return variant
+
+
 @router.get("", response_model=list[VariantOut])
-def list_variants(strategy_id: str = Query(...), db: Session = Depends(get_db)):
+def list_variants(strategy_id: str = Query(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
+    if not strategy:
+        raise HTTPException(404, "Stratégie introuvable")
     return (
         db.query(Variant)
         .filter(Variant.strategy_id == strategy_id)
@@ -28,7 +45,10 @@ def list_variants(strategy_id: str = Query(...), db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=VariantOut, status_code=201)
-def create_variant(payload: VariantCreate, db: Session = Depends(get_db)):
+def create_variant(payload: VariantCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = db.query(Strategy).filter(Strategy.id == payload.strategy_id, Strategy.user_id == current_user.id).first()
+    if not strategy:
+        raise HTTPException(404, "Stratégie introuvable")
     variant = Variant(**payload.model_dump())
     db.add(variant)
     db.commit()
@@ -37,10 +57,15 @@ def create_variant(payload: VariantCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{variant_id}", response_model=VariantDetailEnriched)
-def get_variant(variant_id: str, db: Session = Depends(get_db)):
-    variant = db.query(Variant).filter(Variant.id == variant_id).first()
-    if not variant:
-        raise HTTPException(404, "Variante introuvable")
+def get_variant(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    variant = _verify_variant_owner(variant_id, db, current_user)
+
+    # Lazy migration: recompute aggregate metrics if stale
+    if _run_metrics_stale(variant.aggregate_metrics):
+        recompute_variant_metrics(variant_id, db)
+        db.commit()
+        db.refresh(variant)
+
     runs = db.query(Run).filter(Run.variant_id == variant_id).order_by(Run.imported_at.desc()).all()
 
     # Strategy name
@@ -68,10 +93,8 @@ def get_variant(variant_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{variant_id}", response_model=VariantOut)
-def update_variant(variant_id: str, payload: VariantUpdate, db: Session = Depends(get_db)):
-    variant = db.query(Variant).filter(Variant.id == variant_id).first()
-    if not variant:
-        raise HTTPException(404, "Variante introuvable")
+def update_variant(variant_id: str, payload: VariantUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    variant = _verify_variant_owner(variant_id, db, current_user)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(variant, field, value)
     db.commit()
@@ -80,20 +103,16 @@ def update_variant(variant_id: str, payload: VariantUpdate, db: Session = Depend
 
 
 @router.delete("/{variant_id}", status_code=204)
-def delete_variant(variant_id: str, db: Session = Depends(get_db)):
-    variant = db.query(Variant).filter(Variant.id == variant_id).first()
-    if not variant:
-        raise HTTPException(404, "Variante introuvable")
+def delete_variant(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    variant = _verify_variant_owner(variant_id, db, current_user)
     db.delete(variant)
     db.commit()
 
 
 @router.get("/{variant_id}/metrics")
-def get_variant_metrics(variant_id: str, db: Session = Depends(get_db)):
+def get_variant_metrics(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne les métriques agrégées pré-calculées d'une variante."""
-    variant = db.query(Variant).filter(Variant.id == variant_id).first()
-    if not variant:
-        raise HTTPException(404, "Variante introuvable")
+    variant = _verify_variant_owner(variant_id, db, current_user)
     return {"aggregate_metrics": variant.aggregate_metrics}
 
 
@@ -131,9 +150,7 @@ def _build_lineage(variant: Variant, db: Session) -> VariantLineageNode | None:
 
 
 @router.get("/{variant_id}/lineage", response_model=VariantLineageNode)
-def get_lineage(variant_id: str, db: Session = Depends(get_db)):
+def get_lineage(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne l'arbre de lignée complet depuis la racine."""
-    variant = db.query(Variant).filter(Variant.id == variant_id).first()
-    if not variant:
-        raise HTTPException(404, "Variante introuvable")
+    variant = _verify_variant_owner(variant_id, db, current_user)
     return _build_lineage(variant, db)

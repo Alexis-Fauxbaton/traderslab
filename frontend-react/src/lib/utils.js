@@ -51,6 +51,15 @@ export function getUnit() {
   return localStorage.getItem('unitMode') || 'cash';
 }
 
+const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', JPY: '¥', CHF: 'CHF', CAD: 'C$', AUD: 'A$' };
+
+export function getCurrencySymbol() {
+  try {
+    const u = JSON.parse(localStorage.getItem('user'));
+    return CURRENCY_SYMBOLS[u?.currency] || '$';
+  } catch { return '$'; }
+}
+
 export function convertMetric(value, ctx) {
   if (value == null) return null;
   const unit = getUnit();
@@ -73,22 +82,28 @@ export function unitSuffix() {
   return '';
 }
 
+export function cashPrefix() {
+  return getUnit() === 'cash' ? getCurrencySymbol() : '';
+}
+
 export function formatPnlRaw(n, denom) {
   if (n == null) return { text: '—', cls: '' };
   const v = convertMetric(n, { denom: denom != null ? denom : _unitSettings.initial_balance });
   if (v == null) return { text: '—', cls: '' };
   const cls = v >= 0 ? 'text-green-400' : 'text-red-400';
   const sign = v >= 0 ? '+' : '';
+  const prefix = cashPrefix();
   const suffix = unitSuffix();
-  return { text: sign + v.toFixed(2) + suffix, cls };
+  return { text: sign + prefix + v.toFixed(2) + suffix, cls };
 }
 
 export function formatDrawdownRaw(n, ddPeak) {
   if (n == null) return { text: '—', cls: '' };
   const v = convertMetric(n, { denom: ddPeak || 0 });
   if (v == null) return { text: '—', cls: '' };
+  const prefix = cashPrefix();
   const suffix = unitSuffix();
-  return { text: '-' + v.toFixed(2) + suffix, cls: 'text-red-400' };
+  return { text: '-' + prefix + v.toFixed(2) + suffix, cls: 'text-red-400' };
 }
 
 // Rich text helpers
@@ -141,90 +156,4 @@ export function richTextPlain(val, maxLen) {
   let text = tmp.textContent || tmp.innerText || '';
   if (maxLen && text.length > maxLen) text = text.substring(0, maxLen) + '…';
   return text;
-}
-
-// Evaluation helpers
-export function buildRunMetrics(data) {
-  const m = data.metrics || {};
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
-  const totalTrades = m.total_trades || 0;
-  const winCount = Math.round((m.win_rate || 0) * totalTrades);
-  const lossCount = totalTrades - winCount;
-  const totalPositivePnl = (m.avg_win || 0) * winCount;
-  const totalNegativePnl = (m.avg_loss || 0) * lossCount;
-  let coveredDays = null;
-  if (data.start_date && data.end_date) {
-    coveredDays = Math.round((new Date(data.end_date) - new Date(data.start_date)) / 86400000);
-  }
-  return {
-    id: data.id, name: data.label, runType: data.type || 'backtest',
-    tradeCount: totalTrades, pnl: m.total_pnl ?? null, winRate: m.win_rate ?? null,
-    profitFactor: m.profit_factor ?? null, expectancy: m.expectancy ?? null,
-    maxDrawdown: maxDDRatio, avgWin: m.avg_win ?? null, avgLoss: m.avg_loss ?? null,
-    bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
-    sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
-    periodStart: data.start_date || null, periodEnd: data.end_date || null, coveredDays,
-  };
-}
-
-export function buildVariantMetrics(variantData, aggMetrics, runs) {
-  if (!aggMetrics) return null;
-  const m = aggMetrics;
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
-  const totalTrades = m.total_trades || 0;
-  const winCount = Math.round((m.win_rate || 0) * totalTrades);
-  const lossCount = totalTrades - winCount;
-  const totalPositivePnl = (m.avg_win || 0) * winCount;
-  const totalNegativePnl = (m.avg_loss || 0) * lossCount;
-  const allDates = [];
-  (runs || []).forEach(r => {
-    if (r.start_date) allDates.push(new Date(r.start_date));
-    if (r.end_date) allDates.push(new Date(r.end_date));
-  });
-  let coveredDays = null;
-  if (allDates.length >= 2) {
-    const minDate = allDates.reduce((a, b) => a < b ? a : b);
-    const maxDate = allDates.reduce((a, b) => a > b ? a : b);
-    coveredDays = Math.round((maxDate - minDate) / 86400000);
-  }
-  const runTypes = [...new Set((runs || []).map(r => r.type))];
-  return {
-    id: variantData.id, name: variantData.name, tradeCount: totalTrades,
-    pnl: m.total_pnl ?? null, winRate: m.win_rate ?? null, profitFactor: m.profit_factor ?? null,
-    expectancy: m.expectancy ?? null, maxDrawdown: maxDDRatio, avgWin: m.avg_win ?? null,
-    avgLoss: m.avg_loss ?? null, bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
-    sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
-    coveredDays, runTypes, runsCount: (runs || []).length,
-  };
-}
-
-export function buildVariantMetricsForCompare(variantData, metricsData, trades) {
-  if (!metricsData) return null;
-  const m = metricsData;
-  const ib = _unitSettings.initial_balance || 10000;
-  const ddPeak = ib + (m.dd_peak_equity || 0);
-  const maxDDRatio = ddPeak > 0 ? (m.max_drawdown || 0) / ddPeak : null;
-  const totalTrades = m.total_trades || 0;
-  const winCount = Math.round((m.win_rate || 0) * totalTrades);
-  const lossCount = totalTrades - winCount;
-  const totalPositivePnl = (m.avg_win || 0) * winCount;
-  const totalNegativePnl = (m.avg_loss || 0) * lossCount;
-  let coveredDays = null;
-  if (trades && trades.length >= 2) {
-    const t0 = new Date(trades[0].date);
-    const tN = new Date(trades[trades.length - 1].date);
-    coveredDays = Math.round((tN - t0) / 86400000);
-  }
-  return {
-    id: variantData.id, name: variantData.name, tradeCount: totalTrades,
-    pnl: m.total_pnl ?? null, winRate: m.win_rate ?? null, profitFactor: m.profit_factor ?? null,
-    expectancy: m.expectancy ?? null, maxDrawdown: maxDDRatio, avgWin: m.avg_win ?? null,
-    avgLoss: m.avg_loss ?? null, bestTrade: m.best_trade ?? null, worstTrade: m.worst_trade ?? null,
-    sharpeRatio: m.sharpe_ratio ?? null, totalPositivePnl, totalNegativePnl,
-    coveredDays, runTypes: [], runsCount: null,
-  };
 }

@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom';
 import { SidebarProvider } from './hooks/useSidebar';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import { Spinner } from './components/UI';
-import Modal, { InputField, TextareaField, SelectField } from './components/Modal';
+import Modal, { InputField, TextareaField, TagInput, ChipSelect } from './components/Modal';
 import API from './lib/api';
 import { useSidebar } from './hooks/useSidebar';
 
@@ -20,6 +21,8 @@ const VariantDetail = lazy(() => import('./pages/VariantDetail'));
 const RunDetail = lazy(() => import('./pages/RunDetail'));
 const ImportCSV = lazy(() => import('./pages/ImportCSV'));
 const Compare = lazy(() => import('./pages/Compare'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
 
 function getPageDepth(path) {
   if (!path || path === '/') return 0;
@@ -32,6 +35,7 @@ function getPageDepth(path) {
 }
 
 function AppInner() {
+  const { user, logout, updateUser, loading: authLoading } = useAuth();
   const { reload } = useSidebar();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showNewStrat, setShowNewStrat] = useState(false);
@@ -57,8 +61,8 @@ function AppInner() {
     const strat = await API.post('/strategies', {
       name: fd.get('name'),
       description: fd.get('description'),
-      market: fd.get('market'),
-      timeframe: fd.get('timeframe'),
+      pairs: JSON.parse(fd.get('pairs') || '[]'),
+      timeframes: JSON.parse(fd.get('timeframes') || '[]'),
     });
     const v = await API.post('/variants', {
       strategy_id: strat.id,
@@ -70,9 +74,24 @@ function AppInner() {
     window.location.hash = '#/import/' + v.id;
   }, [reload]);
 
+  if (authLoading) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
+
+  // Public routes (login/register)
+  if (!user) {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen">
-      <Navbar onToggleSidebar={toggleSidebar} />
+      <Navbar onToggleSidebar={toggleSidebar} onLogout={logout} user={user} onUpdateUser={updateUser} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar collapsed={sidebarCollapsed} onNewStrategy={() => setShowNewStrat(true)} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">
@@ -96,8 +115,8 @@ function AppInner() {
         <Modal title="Nouvelle Stratégie" onClose={() => setShowNewStrat(false)} onSubmit={handleNewStrategy}>
           <InputField name="name" label="Nom" required />
           <TextareaField name="description" label="Description" />
-          <InputField name="market" label="Marché" required defaultValue="XAUUSD" />
-          <SelectField name="timeframe" label="Timeframe" defaultValue="M15" options={[
+          <TagInput name="pairs" label="Paires" defaultValue={['XAUUSD']} placeholder="Ex: EURUSD, GBPUSD…" />
+          <ChipSelect name="timeframes" label="Timeframes" defaultValue={['M15']} options={[
             { value: 'M1', label: 'M1' }, { value: 'M5', label: 'M5' }, { value: 'M15', label: 'M15' },
             { value: 'M30', label: 'M30' }, { value: 'H1', label: 'H1' }, { value: 'H4', label: 'H4' },
             { value: 'D1', label: 'D1' }, { value: 'W1', label: 'W1' },
@@ -110,8 +129,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <SidebarProvider>
-      <AppInner />
-    </SidebarProvider>
+    <AuthProvider>
+      <SidebarProvider>
+        <AppInner />
+      </SidebarProvider>
+    </AuthProvider>
   );
 }

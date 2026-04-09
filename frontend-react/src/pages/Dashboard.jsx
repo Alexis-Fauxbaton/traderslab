@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../lib/api';
-import { formatDate, timeAgo, formatPercent, formatPnlRaw, setCurrentAvgLoss, STATUS_LABELS, richTextPlain } from '../lib/utils';
+import { formatDate, timeAgo, formatPercent, formatPnlRaw, setCurrentAvgLoss, STATUS_LABELS, richTextPlain, getCurrencySymbol } from '../lib/utils';
 import { Spinner, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
+import MetricCard from '../components/MetricCard';
 
 function WidgetCard({ title, icon, children }) {
   return (
@@ -28,15 +29,32 @@ function RowLink({ href, primary, secondary, badge }) {
   );
 }
 
-function ResumeBanner() {
+function ResumeBanner({ strategyIds }) {
   const [lastVisit, setLastVisit] = useState(null);
 
   useEffect(() => {
     try {
       const lv = JSON.parse(localStorage.getItem('lastVisit'));
-      if (lv?.hash) setLastVisit(lv);
+      if (!lv?.hash) return;
+      // Validate the lastVisit references a resource owned by the current user
+      const m = lv.hash.match(/^\/(strategy|variant|run)\/([^/]+)/);
+      if (m && strategyIds) {
+        // For strategy pages, check directly; for variant/run, try to validate via API
+        if (m[1] === 'strategy' && !strategyIds.has(m[2])) {
+          localStorage.removeItem('lastVisit');
+          return;
+        }
+        // For variant/run: validate ownership via a quick fetch
+        if (m[1] === 'variant' || m[1] === 'run') {
+          API.get(`/${m[1]}s/${m[2]}`).then(() => setLastVisit(lv)).catch(() => {
+            localStorage.removeItem('lastVisit');
+          });
+          return;
+        }
+      }
+      setLastVisit(lv);
     } catch {}
-  }, []);
+  }, [strategyIds]);
 
   if (!lastVisit) return null;
   const ago = timeAgo(lastVisit.ts);
@@ -97,6 +115,7 @@ export default function Dashboard({ onNewStrategy }) {
 
   if (!strategies || !activity) return <Spinner />;
 
+  const strategyIds = new Set(strategies.map(s => s.id));
   const hasActivity = (activity.recent_variants?.length > 0) ||
     (activity.recent_runs?.length > 0) ||
     (activity.to_review?.length > 0) ||
@@ -109,7 +128,7 @@ export default function Dashboard({ onNewStrategy }) {
         <button onClick={onNewStrategy} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">+ Nouvelle Stratégie</button>
       </div>
 
-      <ResumeBanner />
+      <ResumeBanner strategyIds={strategyIds} />
 
       {hasActivity && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
@@ -145,7 +164,7 @@ export default function Dashboard({ onNewStrategy }) {
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.best_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.best_variant.strategy_name}</p>
                       <p className={`text-sm font-semibold mt-0.5 ${activity.best_variant.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {activity.best_variant.total_pnl >= 0 ? '+' : ''}{activity.best_variant.total_pnl.toFixed(2)}
+                        {activity.best_variant.total_pnl >= 0 ? '+' : ''}{getCurrencySymbol()}{activity.best_variant.total_pnl.toFixed(2)}
                       </p>
                     </Link>
                   </div>
@@ -157,7 +176,7 @@ export default function Dashboard({ onNewStrategy }) {
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.worst_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.worst_variant.strategy_name}</p>
                       <p className={`text-sm font-semibold mt-0.5 ${activity.worst_variant.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {activity.worst_variant.total_pnl >= 0 ? '+' : ''}{activity.worst_variant.total_pnl.toFixed(2)}
+                        {activity.worst_variant.total_pnl >= 0 ? '+' : ''}{getCurrencySymbol()}{activity.worst_variant.total_pnl.toFixed(2)}
                       </p>
                     </Link>
                   </div>
@@ -173,40 +192,29 @@ export default function Dashboard({ onNewStrategy }) {
           <p className="text-lg mb-4">Aucune stratégie créée</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {strategies.map(s => {
-            const m = s.aggregate_metrics;
-            const hasMet = m && m.total_trades > 0;
-            if (hasMet) setCurrentAvgLoss(m.avg_loss);
-            const rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
-            const desc = richTextPlain(s.description, 120);
-            const pnl = hasMet ? formatPnlRaw(m.total_pnl) : null;
-
-            return (
-              <Link key={s.id} to={'/strategy/' + s.id} className="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-white group-hover:text-blue-400 transition">{s.name}</h3>
-                  <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{s.timeframe}</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 [&>a]:h-full">
+          {strategies.map(s => (
+            <MetricCard
+              key={s.id}
+              to={'/strategy/' + s.id}
+              title={s.name}
+              badge={
+                <div className="flex gap-1 flex-wrap justify-end">
+                  {(s.timeframes || []).map(tf => (
+                    <span key={tf} className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">{tf}</span>
+                  ))}
                 </div>
-                <p className="text-xs text-slate-400 mb-2">{desc || <span className="italic">Pas de description</span>}</p>
-                {hasMet && (
-                  <>
-                    <MiniChart data={m.equity_curve} height={60} />
-                    <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-400 mb-2">
-                      <span>PnL <PnlSpan value={m.total_pnl} /></span>
-                      <span>Profit Factor <span className="text-white">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</span></span>
-                      <span>RR Moyen <span className="text-white">{rr != null ? rr.toFixed(2) : '—'}</span></span>
-                    </div>
-                  </>
-                )}
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <span>📈 {s.market}</span>
+              }
+              description={s.description}
+              metrics={s.aggregate_metrics}
+              footer={
+                <>
+                  <span>📈 {(s.pairs || []).join(', ') || '—'}</span>
                   <span>📅 {formatDate(s.created_at)}</span>
-                  {hasMet && <span>{m.total_trades} trades</span>}
-                </div>
-              </Link>
-            );
-          })}
+                </>
+              }
+            />
+          ))}
         </div>
       )}
     </div>

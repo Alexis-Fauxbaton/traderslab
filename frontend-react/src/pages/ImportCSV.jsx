@@ -88,6 +88,8 @@ export default function ImportCSV() {
   const handleImport = async () => {
     const label = document.querySelector('[name=label]')?.value?.trim();
     const runType = document.querySelector('[name=run_type]')?.value;
+    const balanceInput = document.querySelector('[name=initial_balance]')?.value?.trim();
+    const currencyInput = document.querySelector('[name=currency]')?.value?.trim();
     if (!label) return alert('Le label est requis');
     if (!csvFile) return alert('Aucun fichier sélectionné');
 
@@ -96,6 +98,8 @@ export default function ImportCSV() {
     fd.append('variant_id', variantId);
     fd.append('label', label);
     fd.append('type', runType);
+    if (balanceInput) fd.append('initial_balance', balanceInput);
+    if (currencyInput) fd.append('currency', currencyInput);
     fd.append('file', csvFile);
     if (hasMapping) fd.append('column_mapping', JSON.stringify(mapping));
 
@@ -144,6 +148,8 @@ export default function ImportCSV() {
               { value: 'forward', label: 'Forward Test' },
               { value: 'live', label: 'Live' },
             ]} />
+            <InputField name="initial_balance" label="Capital initial" type="number" placeholder="Auto-détecté depuis le CSV" />
+            <InputField name="currency" label="Devise du compte" placeholder="Auto-détecté (ex: USD, EUR)" />
           </div>
 
           {/* Format selector */}

@@ -8,17 +8,40 @@ from database import get_db
 from models.run import Run
 from models.trade import Trade
 from models.variant import Variant
+from models.strategy import Strategy
+from models.user import User
 from schemas.run import RunOut, RunDetail, RunImportResponse, TradesPaginated
 from schemas.trade import TradeOut
 from services.csv_parser import parse_csv
 from services.metrics import compute_metrics, _compute_sharpe_annualized
-from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics
+from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics, recompute_run_metrics, _run_metrics_stale
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
 
+def _verify_run_owner(run_id: str, db: Session, user: User) -> Run:
+    """Get run and verify ownership through variant → strategy."""
+    run = db.query(Run).filter(Run.id == run_id).first()
+    if not run:
+        raise HTTPException(404, "Run introuvable")
+    variant = db.query(Variant).filter(Variant.id == run.variant_id).first()
+    if not variant:
+        raise HTTPException(404, "Run introuvable")
+    strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == user.id).first()
+    if not strategy:
+        raise HTTPException(404, "Run introuvable")
+    return run
+
+
 @router.get("", response_model=list[RunOut])
-def list_runs(variant_id: str = Query(...), db: Session = Depends(get_db)):
+def list_runs(variant_id: str = Query(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Verify variant ownership
+    variant = db.query(Variant).filter(Variant.id == variant_id).first()
+    if variant:
+        strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == current_user.id).first()
+        if not strategy:
+            raise HTTPException(404, "Variante introuvable")
     return (
         db.query(Run)
         .filter(Run.variant_id == variant_id)
@@ -28,11 +51,14 @@ def list_runs(variant_id: str = Query(...), db: Session = Depends(get_db)):
 
 
 @router.get("/{run_id}/summary", response_model=RunOut)
-def get_run_summary(run_id: str, db: Session = Depends(get_db)):
+def get_run_summary(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne le run sans ses trades — léger, pour header + métriques + chart."""
-    run = db.query(Run).filter(Run.id == run_id).first()
-    if not run:
-        raise HTTPException(404, "Run introuvable")
+    run = _verify_run_owner(run_id, db, current_user)
+    # Migration lazy : recalcule les métriques si les clés Pro sont absentes
+    if _run_metrics_stale(run.metrics):
+        recompute_run_metrics(run_id, db)
+        db.commit()
+        db.refresh(run)
     return run
 
 
@@ -42,11 +68,10 @@ def get_run_trades(
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Retourne les trades d'un run avec pagination."""
-    run = db.query(Run).filter(Run.id == run_id).first()
-    if not run:
-        raise HTTPException(404, "Run introuvable")
+    run = _verify_run_owner(run_id, db, current_user)
 
     total = db.query(Trade).filter(Trade.run_id == run_id).count()
     trades = (
@@ -68,18 +93,16 @@ def get_run_trades(
 
 
 @router.get("/{run_id}", response_model=RunDetail)
-def get_run(run_id: str, db: Session = Depends(get_db)):
-    run = db.query(Run).filter(Run.id == run_id).first()
-    if not run:
-        raise HTTPException(404, "Run introuvable")
-    trades = db.query(Trade).filter(Trade.run_id == run_id).order_by(Trade.close_time).all()
+def get_run(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    run = _verify_run_owner(run_id, db, current_user)
 
-    # Migration lazy : recalcule sharpe_ratio si absent des métriques stockées
-    if run.metrics is not None and "sharpe_ratio" not in run.metrics:
-        trades_data = [{"pnl": t.pnl, "close_time": t.close_time} for t in trades]
-        sorted_td = sorted(trades_data, key=lambda x: x["close_time"])
-        run.metrics = {**run.metrics, "sharpe_ratio": _compute_sharpe_annualized(sorted_td)}
+    # Migration lazy : recalcule les métriques si les clés Pro sont absentes
+    if _run_metrics_stale(run.metrics):
+        recompute_run_metrics(run_id, db)
         db.commit()
+        db.refresh(run)
+
+    trades = db.query(Trade).filter(Trade.run_id == run_id).order_by(Trade.close_time).all()
 
     return RunDetail(
         **RunOut.model_validate(run).model_dump(),
@@ -88,10 +111,8 @@ def get_run(run_id: str, db: Session = Depends(get_db)):
 
 
 @router.delete("/{run_id}", status_code=204)
-def delete_run(run_id: str, db: Session = Depends(get_db)):
-    run = db.query(Run).filter(Run.id == run_id).first()
-    if not run:
-        raise HTTPException(404, "Run introuvable")
+def delete_run(run_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    run = _verify_run_owner(run_id, db, current_user)
     variant_id = run.variant_id
     # Supprimer les trades associés d'abord
     db.query(Trade).filter(Trade.run_id == run_id).delete()
@@ -111,9 +132,12 @@ async def import_csv(
     variant_id: str = Form(...),
     label: str = Form(...),
     type: str = Form(...),
+    initial_balance: float | None = Form(None),
+    currency: str | None = Form(None),
     file: UploadFile = File(...),
     column_mapping: str | None = Form(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Import CSV de trades pour créer un Run.
 
@@ -125,9 +149,12 @@ async def import_csv(
     5. Calculer les métriques
     6. Persister Run + Trades + Metrics
     """
-    # Vérifier que la variante existe
+    # Vérifier que la variante existe et appartient à l'utilisateur
     variant = db.query(Variant).filter(Variant.id == variant_id).first()
     if not variant:
+        raise HTTPException(404, "Variante introuvable")
+    strategy = db.query(Strategy).filter(Strategy.id == variant.strategy_id, Strategy.user_id == current_user.id).first()
+    if not strategy:
         raise HTTPException(404, "Variante introuvable")
 
     # Valider le type de run
@@ -144,7 +171,15 @@ async def import_csv(
 
     # Étape 1-3 : Parser et valider le CSV
     content = await file.read()
-    trades_data, parse_errors = parse_csv(content, mapping)
+    trades_data, parse_errors, detected_balance, detected_currency = parse_csv(content, mapping)
+
+    # Résoudre la balance initiale : formulaire > CSV > défaut
+    resolved_balance = initial_balance or detected_balance or 10000.0
+    # Résoudre la currency : formulaire > CSV > défaut
+    resolved_currency = currency or detected_currency or "USD"
+    currency_source = "detected" if detected_currency else "default"
+    if currency:
+        currency_source = "manual"
 
     warnings: list[str] = []
     if parse_errors:
@@ -168,7 +203,7 @@ async def import_csv(
                 )
 
     # Étape 5 : Calculer les métriques
-    metrics = compute_metrics(trades_data)
+    metrics = compute_metrics(trades_data, initial_balance=resolved_balance)
 
     # Étape 6 : Persister
     # Dates calculées automatiquement depuis les trades
@@ -178,6 +213,9 @@ async def import_csv(
         type=type,
         start_date=new_start.date(),
         end_date=new_end.date(),
+        initial_balance=resolved_balance,
+        currency=resolved_currency,
+        currency_source=currency_source,
         metrics=metrics,
     )
     db.add(run)
@@ -201,4 +239,6 @@ async def import_csv(
         nb_trades_imported=len(trades_data),
         warnings=warnings,
         metrics=metrics,
+        initial_balance=resolved_balance,
+        currency=resolved_currency,
     )

@@ -8,7 +8,10 @@ from database import get_db
 from models.variant import Variant
 from models.run import Run
 from models.trade import Trade
+from models.strategy import Strategy
+from models.user import User
 from services.metrics import compute_metrics
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/compare", tags=["compare"])
 
@@ -44,13 +47,23 @@ def _get_all_runs_aggregated_data(
         return None
 
     trade_dicts = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades]
-    metrics = compute_metrics(trade_dicts)
+
+    # Use first run's initial_balance for proper DD% calculation
+    first_run = runs[0]
+    ib = first_run.initial_balance if first_run.initial_balance else 10_000.0
+    metrics = compute_metrics(trade_dicts, initial_balance=ib)
     equity_curve = metrics.pop("equity_curve", [])
 
     trade_points = [
         {"date": t.close_time.isoformat(), "pnl": round(t.pnl, 2)}
         for t in trades
     ]
+
+    # PnL bruts par trade pour tests statistiques (t-test, etc.)
+    trade_pnls = [round(t.pnl, 2) for t in trades]
+
+    # Currency info
+    currencies = list({r.currency or "USD" for r in runs})
 
     n = len(runs)
     return {
@@ -59,16 +72,27 @@ def _get_all_runs_aggregated_data(
         "metrics": metrics,
         "equity_curve": equity_curve,
         "trades": trade_points,
+        "trade_pnls": trade_pnls,
+        "currency": currencies[0] if currencies else "USD",
+        "mixed_currencies": len(currencies) > 1,
+        "initial_balance": ib,
     }
 
 
 # Métriques où une valeur plus haute est meilleure
 _HIGHER_IS_BETTER = {
-    "total_pnl", "win_rate", "profit_factor", "expectancy",
+    "total_pnl", "total_return_pct", "win_rate", "profit_factor", "expectancy",
     "avg_win", "best_trade", "total_trades", "sharpe_ratio",
+    "sortino_ratio", "calmar_ratio", "recovery_factor",
+    "risk_reward_ratio", "consistency_score", "max_consecutive_wins",
 }
 # Métriques où une valeur plus basse (en valeur absolue) est meilleure
-_LOWER_IS_BETTER = {"max_drawdown", "worst_trade", "avg_loss"}
+_LOWER_IS_BETTER = {"max_drawdown", "max_drawdown_pct_true", "worst_trade", "avg_loss", "max_consecutive_losses"}
+# Clés à exclure du diff (structures complexes, non-numériques)
+_DIFF_EXCLUDE = {
+    "equity_curve", "monthly_breakdown", "underwater",
+    "distribution", "ttest", "monte_carlo", "split_half",
+}
 
 
 def _build_diff(metrics_a: dict | None, metrics_b: dict | None) -> dict[str, str]:
@@ -80,7 +104,7 @@ def _build_diff(metrics_a: dict | None, metrics_b: dict | None) -> dict[str, str
     all_keys = set(metrics_a.keys()) | set(metrics_b.keys())
 
     for key in all_keys:
-        if key == "equity_curve":
+        if key in _DIFF_EXCLUDE:
             continue
         val_a = metrics_a.get(key)
         val_b = metrics_b.get(key)
@@ -122,6 +146,7 @@ def compare_variants(
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Compare deux variantes en retournant leurs infos, métriques et equity curves.
 
@@ -136,6 +161,13 @@ def compare_variants(
     if not va:
         raise HTTPException(404, f"Variante A introuvable : {variant_a}")
     if not vb:
+        raise HTTPException(404, f"Variante B introuvable : {variant_b}")
+    # Verify ownership
+    sa = db.query(Strategy).filter(Strategy.id == va.strategy_id, Strategy.user_id == current_user.id).first()
+    sb = db.query(Strategy).filter(Strategy.id == vb.strategy_id, Strategy.user_id == current_user.id).first()
+    if not sa:
+        raise HTTPException(404, f"Variante A introuvable : {variant_a}")
+    if not sb:
         raise HTTPException(404, f"Variante B introuvable : {variant_b}")
 
     sd_a = start_date_a or start_date

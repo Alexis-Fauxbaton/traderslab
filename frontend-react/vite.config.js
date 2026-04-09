@@ -7,11 +7,14 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    allowedHosts: 'all',
     proxy: {
+      '/auth': 'http://localhost:8000',
       '/strategies': 'http://localhost:8000',
       '/variants': 'http://localhost:8000',
       '/runs': 'http://localhost:8000',
       '/compare': 'http://localhost:8000',
+      '/analysis': 'http://localhost:8000',
     },
   },
   build: {

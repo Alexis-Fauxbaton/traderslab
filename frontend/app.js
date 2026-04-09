@@ -1104,16 +1104,15 @@ function showNewStrategyModal() {
   showModal('Nouvelle Stratégie',
     inputField('name', 'Nom') +
     textareaField('description', 'Description') +
-    inputField('market', 'Marché', 'text', true, 'XAUUSD') +
-    selectField('timeframe', 'Timeframe', [
-      {value:'M1',label:'M1'},{value:'M5',label:'M5'},{value:'M15',label:'M15'},
-      {value:'M30',label:'M30'},{value:'H1',label:'H1'},{value:'H4',label:'H4'},
-      {value:'D1',label:'D1'},{value:'W1',label:'W1'}
-    ], 'M15'),
+    inputField('pairs', 'Paires (séparées par des virgules)', 'text', true, 'XAUUSD') +
+    inputField('timeframes_input', 'Timeframes (séparées par des virgules)', 'text', true, 'M15'),
     async function(fd) {
+      var pairsStr = fd.get('pairs') || '';
+      var tfsStr = fd.get('timeframes_input') || '';
       var strat = await API.post('/strategies', {
         name: fd.get('name'), description: fd.get('description'),
-        market: fd.get('market'), timeframe: fd.get('timeframe'),
+        pairs: pairsStr.split(',').map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean),
+        timeframes: tfsStr.split(',').map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean),
       });
       // Créer silencieusement la première itération : NomStratégie V1
       var v = await API.post('/variants', {
@@ -1407,7 +1406,7 @@ async function pageDashboard() {
         return '<a href="#/strategy/' + s.id + '" class="block bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">' +
           '<div class="flex items-start justify-between mb-2">' +
             '<h3 class="font-semibold text-white group-hover:text-blue-400 transition">' + esc(s.name) + '</h3>' +
-            '<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">' + esc(s.timeframe) + '</span>' +
+            '<span class="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">' + esc((s.timeframes || []).join(', ')) + '</span>' +
           '</div>' +
           '<p class="text-xs text-slate-400 mb-2">' + (esc(desc) || '<span class="italic">Pas de description</span>') + '</p>' +
           (hasMet ?
@@ -1419,7 +1418,7 @@ async function pageDashboard() {
             '</div>'
           : '') +
           '<div class="flex items-center gap-3 text-xs text-slate-500">' +
-            '<span>📈 ' + esc(s.market) + '</span>' +
+            '<span>📈 ' + esc((s.pairs || []).join(', ')) + '</span>' +
             '<span>📅 ' + formatDate(s.created_at) + '</span>' +
             (hasMet ? '<span>' + m.total_trades + ' trades</span>' : '') +
           '</div>' +
@@ -1595,8 +1594,8 @@ async function pageStrategy(id) {
           '<h1 class="text-2xl font-bold text-white mb-1">' + esc(data.name) + '</h1>' +
           '<p class="text-slate-400 text-sm mb-3">' + (esc(data.description) || 'Pas de description') + '</p>' +
           '<div class="flex gap-4 text-sm text-slate-400">' +
-            '<span>📈 ' + esc(data.market) + '</span>' +
-            '<span>⏱ ' + esc(data.timeframe) + '</span>' +
+            '<span>📈 ' + esc((data.pairs || []).join(', ')) + '</span>' +
+            '<span>⏱ ' + esc((data.timeframes || []).join(', ')) + '</span>' +
             '<span>📅 ' + formatDate(data.created_at) + '</span>' +
           '</div>' +
         '</div>' +
@@ -1732,16 +1731,15 @@ async function pageStrategy(id) {
     showModal('Modifier la Stratégie',
       inputField('name', 'Nom', 'text', true, data.name) +
       textareaField('description', 'Description', false, data.description) +
-      inputField('market', 'Marché', 'text', true, data.market) +
-      selectField('timeframe', 'Timeframe', [
-        {value:'M1',label:'M1'},{value:'M5',label:'M5'},{value:'M15',label:'M15'},
-        {value:'M30',label:'M30'},{value:'H1',label:'H1'},{value:'H4',label:'H4'},
-        {value:'D1',label:'D1'},{value:'W1',label:'W1'}
-      ], data.timeframe),
+      inputField('pairs', 'Paires (séparées par des virgules)', 'text', true, (data.pairs || []).join(', ')) +
+      inputField('timeframes_input', 'Timeframes (séparées par des virgules)', 'text', true, (data.timeframes || []).join(', ')),
       async function(fd) {
+        var pairsStr = fd.get('pairs') || '';
+        var tfsStr = fd.get('timeframes_input') || '';
         await API.put('/strategies/' + id, {
           name: fd.get('name'), description: fd.get('description'),
-          market: fd.get('market'), timeframe: fd.get('timeframe'),
+          pairs: pairsStr.split(',').map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean),
+          timeframes: tfsStr.split(',').map(function(s) { return s.trim().toUpperCase(); }).filter(Boolean),
         });
         await loadSidebar();
         route();

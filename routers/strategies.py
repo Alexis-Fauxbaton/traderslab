@@ -7,18 +7,25 @@ from models.strategy import Strategy
 from models.variant import Variant
 from models.run import Run
 from models.trade import Trade
+from models.user import User
 from schemas.strategy import StrategyCreate, StrategyUpdate, StrategyOut, StrategyDetail
 from schemas.variant import VariantOut
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
 
 
 @router.get("/dashboard/activity")
-def dashboard_activity(db: Session = Depends(get_db)):
+def dashboard_activity(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Données d'activité récente pour le dashboard home."""
+    user_strategy_ids = [s.id for s in db.query(Strategy.id).filter(Strategy.user_id == current_user.id).all()]
+    if not user_strategy_ids:
+        return {"recent_variants": [], "recent_runs": [], "to_review": [], "best_variant": None, "worst_variant": None}
+
     recent_variants = (
         db.query(Variant, Strategy)
         .join(Strategy, Variant.strategy_id == Strategy.id)
+        .filter(Strategy.user_id == current_user.id)
         .order_by(Variant.created_at.desc())
         .limit(5)
         .all()
@@ -28,6 +35,7 @@ def dashboard_activity(db: Session = Depends(get_db)):
         db.query(Run, Variant, Strategy)
         .join(Variant, Run.variant_id == Variant.id)
         .join(Strategy, Variant.strategy_id == Strategy.id)
+        .filter(Strategy.user_id == current_user.id)
         .order_by(Run.imported_at.desc())
         .limit(5)
         .all()
@@ -36,6 +44,7 @@ def dashboard_activity(db: Session = Depends(get_db)):
     to_review = (
         db.query(Variant, Strategy)
         .join(Strategy, Variant.strategy_id == Strategy.id)
+        .filter(Strategy.user_id == current_user.id)
         .filter(Variant.status.in_(["testing", "active"]))
         .filter((Variant.decision == None) | (Variant.decision == ""))
         .order_by(Variant.created_at.desc())
@@ -54,6 +63,7 @@ def dashboard_activity(db: Session = Depends(get_db)):
         .join(Run, Trade.run_id == Run.id)
         .join(Variant, Run.variant_id == Variant.id)
         .join(Strategy, Variant.strategy_id == Strategy.id)
+        .filter(Strategy.user_id == current_user.id)
         .group_by(Variant.id, Variant.name, Strategy.name, Strategy.id)
         .all()
     )
@@ -114,9 +124,9 @@ def dashboard_activity(db: Session = Depends(get_db)):
 
 
 @router.get("/dashboard")
-def dashboard(db: Session = Depends(get_db)):
+def dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne toutes les stratégies avec métriques agrégées pré-calculées."""
-    strategies = db.query(Strategy).order_by(Strategy.created_at.desc()).all()
+    strategies = db.query(Strategy).filter(Strategy.user_id == current_user.id).order_by(Strategy.created_at.desc()).all()
     result = []
     for s in strategies:
         strategy_dict = StrategyOut.model_validate(s).model_dump()
@@ -127,9 +137,9 @@ def dashboard(db: Session = Depends(get_db)):
 
 
 @router.get("/{strategy_id}/variants-summary")
-def variants_summary(strategy_id: str, db: Session = Depends(get_db)):
+def variants_summary(strategy_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne les variantes d'une stratégie avec métriques agrégées pré-calculées."""
-    strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
 
@@ -144,13 +154,13 @@ def variants_summary(strategy_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("", response_model=list[StrategyOut])
-def list_strategies(db: Session = Depends(get_db)):
-    return db.query(Strategy).order_by(Strategy.created_at.desc()).all()
+def list_strategies(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return db.query(Strategy).filter(Strategy.user_id == current_user.id).order_by(Strategy.created_at.desc()).all()
 
 
 @router.post("", response_model=StrategyOut, status_code=201)
-def create_strategy(payload: StrategyCreate, db: Session = Depends(get_db)):
-    strategy = Strategy(**payload.model_dump())
+def create_strategy(payload: StrategyCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = Strategy(**payload.model_dump(), user_id=current_user.id)
     db.add(strategy)
     db.commit()
     db.refresh(strategy)
@@ -158,8 +168,8 @@ def create_strategy(payload: StrategyCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{strategy_id}", response_model=StrategyDetail)
-def get_strategy(strategy_id: str, db: Session = Depends(get_db)):
-    strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+def get_strategy(strategy_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
     variants = db.query(Variant).filter(Variant.strategy_id == strategy_id).all()
@@ -170,8 +180,8 @@ def get_strategy(strategy_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{strategy_id}", response_model=StrategyOut)
-def update_strategy(strategy_id: str, payload: StrategyUpdate, db: Session = Depends(get_db)):
-    strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+def update_strategy(strategy_id: str, payload: StrategyUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
     for field, value in payload.model_dump(exclude_unset=True).items():
@@ -182,8 +192,8 @@ def update_strategy(strategy_id: str, payload: StrategyUpdate, db: Session = Dep
 
 
 @router.delete("/{strategy_id}", status_code=204)
-def delete_strategy(strategy_id: str, db: Session = Depends(get_db)):
-    strategy = db.query(Strategy).filter(Strategy.id == strategy_id).first()
+def delete_strategy(strategy_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
     db.delete(strategy)
