@@ -53,6 +53,10 @@ def run_migrations():
                            _col_type("TEXT DEFAULT 'local'", "TEXT DEFAULT 'local'"))
     _add_column_if_missing(insp, "users", "provider_id",
                            _col_type("TEXT", "TEXT"))
+    _add_column_if_missing(insp, "runs", "timeframe",
+                           _col_type("TEXT", "TEXT"))
+    _add_column_if_missing(insp, "runs", "pairs",
+                           _col_type("TEXT", "TEXT"))
 
     # Migrate market → pairs, timeframe → timeframes (JSON arrays)
     _migrate_strategy_pairs_timeframes(insp)

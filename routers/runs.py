@@ -134,6 +134,7 @@ async def import_csv(
     type: str = Form(...),
     initial_balance: float | None = Form(None),
     currency: str | None = Form(None),
+    timeframe: str | None = Form(None),
     file: UploadFile = File(...),
     column_mapping: str | None = Form(None),
     db: Session = Depends(get_db),
@@ -205,6 +206,9 @@ async def import_csv(
     # Étape 5 : Calculer les métriques
     metrics = compute_metrics(trades_data, initial_balance=resolved_balance)
 
+    # Auto-detect pairs from trades
+    detected_pairs = sorted({t["symbol"] for t in trades_data if t.get("symbol")})
+
     # Étape 6 : Persister
     # Dates calculées automatiquement depuis les trades
     run = Run(
@@ -216,6 +220,8 @@ async def import_csv(
         initial_balance=resolved_balance,
         currency=resolved_currency,
         currency_source=currency_source,
+        pairs=detected_pairs or None,
+        timeframe=timeframe or None,
         metrics=metrics,
     )
     db.add(run)

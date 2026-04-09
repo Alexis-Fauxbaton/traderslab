@@ -14,12 +14,13 @@ import { formatDate, setCurrentAvgLoss, richTextPlain } from '../lib/utils';
  *  - metrics: objet métriques agrégées (equity_curve, total_pnl, profit_factor, avg_win, avg_loss, total_trades)
  *  - footer: éléments supplémentaires en bas (pairs, date, trades, etc.)
  */
-export default function MetricCard({ to, title, badge, description, metrics, footer }) {
+export default function MetricCard({ to, title, badge, description, metrics, pairs, timeframes, footer }) {
   const m = metrics;
   const hasMet = m && m.total_trades > 0;
   if (hasMet) setCurrentAvgLoss(m.avg_loss);
   const rr = (hasMet && m.avg_win && m.avg_loss && m.avg_loss !== 0) ? Math.abs(m.avg_win / m.avg_loss) : null;
   const desc = typeof description === 'string' ? richTextPlain(description, 120) : description;
+  const hasTags = (pairs && pairs.length > 0) || (timeframes && timeframes.length > 0);
 
   return (
     <Link to={to} className="flex flex-col bg-slate-800 border border-slate-700 rounded-xl p-5 hover:border-blue-500/50 transition group">
@@ -28,6 +29,12 @@ export default function MetricCard({ to, title, badge, description, metrics, foo
         {badge}
       </div>
       {desc && <p className="text-xs text-slate-500 mb-2 truncate">{desc}</p>}
+      {hasTags && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {pairs && pairs.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{p}</span>)}
+          {timeframes && timeframes.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400">{t}</span>)}
+        </div>
+      )}
       <div className="flex-1" />
       {hasMet && (
         <>

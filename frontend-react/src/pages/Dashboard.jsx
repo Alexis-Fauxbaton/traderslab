@@ -6,11 +6,11 @@ import { Spinner, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
 import MetricCard from '../components/MetricCard';
 
-function WidgetCard({ title, icon, children }) {
+function WidgetCard({ title, icon, accent, children }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col">
-      <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-        <span>{icon}</span>{title}
+      <h3 className="text-xs font-semibold uppercase tracking-wide mb-3 flex items-center gap-2" style={{ color: accent || '#94a3b8' }}>
+        {icon}{title}
       </h3>
       {children}
     </div>
@@ -85,7 +85,7 @@ function ResumeBanner({ strategyIds }) {
   return (
     <div className="mb-5">
       <a href={'#' + lastVisit.hash} className="inline-flex items-center gap-2 bg-blue-600/15 border border-blue-500/30 hover:bg-blue-600/25 transition text-blue-300 px-4 py-2.5 rounded-lg text-sm">
-        <span>↩</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
         <span>Reprendre — {pathHtml}</span>
         <span className="text-blue-400/50 text-xs">({ago})</span>
       </a>
@@ -132,21 +132,21 @@ export default function Dashboard({ onNewStrategy }) {
 
       {hasActivity && (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
-          <WidgetCard title="Variantes récentes" icon="🧪">
+          <WidgetCard title="Variantes récentes" accent="#a78bfa" icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6l-1 7h4L10 21l1-8H7L9 3z"/></svg>}>
             {!activity.recent_variants?.length ? <p className="text-slate-500 text-xs italic">Aucune variante</p> :
               activity.recent_variants.map(v => (
                 <RowLink key={v.id} href={'/variant/' + v.id} primary={v.name} secondary={v.strategy_name} badge={timeAgo(v.created_at)} />
               ))
             }
           </WidgetCard>
-          <WidgetCard title="Derniers imports" icon="📥">
+          <WidgetCard title="Derniers imports" accent="#f87171" icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}>
             {!activity.recent_runs?.length ? <p className="text-slate-500 text-xs italic">Aucun import</p> :
               activity.recent_runs.map(r => (
                 <RowLink key={r.id} href={'/run/' + r.id} primary={r.label || r.type} secondary={r.variant_name} badge={timeAgo(r.imported_at)} />
               ))
             }
           </WidgetCard>
-          <WidgetCard title="À revoir" icon="🔍">
+          <WidgetCard title="À revoir" accent="#fbbf24" icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>}>
             {!activity.to_review?.length ? <p className="text-slate-500 text-xs text-green-400/70">Tout est à jour ✓</p> :
               activity.to_review.map(v => {
                 const badgeClass = (v.status === 'testing' || v.status === 'ready_to_test') ? 'text-yellow-400' : v.status === 'idea' ? 'text-purple-400' : 'text-blue-400';
@@ -154,12 +154,12 @@ export default function Dashboard({ onNewStrategy }) {
               })
             }
           </WidgetCard>
-          <WidgetCard title="Performances" icon="🏆">
+          <WidgetCard title="Performances" accent="#34d399" icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}>
             {(!activity.best_variant && !activity.worst_variant) ? <p className="text-slate-500 text-xs italic">Pas encore de données</p> : (
               <>
                 {activity.best_variant && (
                   <div className="mb-3">
-                    <p className="text-xs text-slate-500 mb-1">🏆 Meilleure variante</p>
+                    <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg> Meilleure variante</p>
                     <Link to={'/variant/' + activity.best_variant.id} className="group block">
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.best_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.best_variant.strategy_name}</p>
@@ -171,7 +171,7 @@ export default function Dashboard({ onNewStrategy }) {
                 )}
                 {activity.worst_variant && (!activity.best_variant || activity.worst_variant.id !== activity.best_variant.id) && (
                   <div>
-                    <p className="text-xs text-slate-500 mb-1">↓ Pire variante</p>
+                    <p className="text-xs text-slate-500 mb-1 flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg> Pire variante</p>
                     <Link to={'/variant/' + activity.worst_variant.id} className="group block">
                       <p className="text-slate-200 text-xs group-hover:text-blue-400 transition truncate">{activity.worst_variant.name}</p>
                       <p className="text-xs text-slate-500 truncate">{activity.worst_variant.strategy_name}</p>
@@ -209,8 +209,8 @@ export default function Dashboard({ onNewStrategy }) {
               metrics={s.aggregate_metrics}
               footer={
                 <>
-                  <span>📈 {(s.pairs || []).join(', ') || '—'}</span>
-                  <span>📅 {formatDate(s.created_at)}</span>
+                  <span className="flex items-center gap-1"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> {(s.pairs || []).join(', ') || '—'}</span>
+                  <span className="flex items-center gap-1"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {formatDate(s.created_at)}</span>
                 </>
               }
             />

@@ -144,10 +144,28 @@ def variants_summary(strategy_id: str, db: Session = Depends(get_db), current_us
         raise HTTPException(404, "Stratégie introuvable")
 
     variants = db.query(Variant).filter(Variant.strategy_id == strategy_id).all()
+    variant_ids = [v.id for v in variants]
+
+    # Aggregate pairs & timeframes from runs per variant
+    runs = db.query(Run).filter(Run.variant_id.in_(variant_ids)).all() if variant_ids else []
+    runs_by_variant: dict[str, list] = {}
+    for r in runs:
+        runs_by_variant.setdefault(r.variant_id, []).append(r)
+
     result = []
     for v in variants:
         variant_dict = VariantOut.model_validate(v).model_dump()
         variant_dict["aggregate_metrics"] = v.aggregate_metrics
+        v_runs = runs_by_variant.get(v.id, [])
+        all_pairs: set[str] = set()
+        all_timeframes: set[str] = set()
+        for r in v_runs:
+            if r.pairs:
+                all_pairs.update(r.pairs)
+            if r.timeframe:
+                all_timeframes.add(r.timeframe)
+        variant_dict["pairs"] = sorted(all_pairs)
+        variant_dict["timeframes"] = sorted(all_timeframes)
         result.append(variant_dict)
 
     return result

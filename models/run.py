@@ -18,4 +18,6 @@ class Run(Base):
     initial_balance = Column(Float, nullable=True, default=10000.0)
     currency = Column(String, nullable=True, default="USD")
     currency_source = Column(String, nullable=True, default="detected")  # detected | inherited
+    timeframe = Column(String, nullable=True)
+    pairs = Column(JSON, nullable=True)     # auto-detected from trades: ["EURUSD", "GBPUSD"]
     metrics = Column(JSON, nullable=True)

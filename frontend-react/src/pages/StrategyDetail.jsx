@@ -103,6 +103,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
   const { reload } = useSidebar();
   const [data, setData] = useState(null);
   const [varMetrics, setVarMetrics] = useState({});
+  const [varExtra, setVarExtra] = useState({});   // pairs + timeframes per variant
   const [view, setView] = useState('grid');
   const [showEdit, setShowEdit] = useState(false);
   const [editKey, setEditKey] = useState(0);
@@ -122,9 +123,14 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
         API.get('/strategies/' + id + '/variants-summary'),
       ]);
       const metrics = {};
-      summary.forEach(vs => { metrics[vs.id] = vs.aggregate_metrics; });
+      const extra = {};
+      summary.forEach(vs => {
+        metrics[vs.id] = vs.aggregate_metrics;
+        extra[vs.id] = { pairs: vs.pairs || [], timeframes: vs.timeframes || [] };
+      });
       setData(stratData);
       setVarMetrics(metrics);
+      setVarExtra(extra);
       try { localStorage.setItem('lastVisit', JSON.stringify({ hash: '/strategy/' + id, ts: Date.now(), crumbs: [{ label: 'Stratégies', href: '#/' }, { label: stratData.name }] })); } catch {}
     })();
   }, [id]);
@@ -179,9 +185,14 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
         API.get('/strategies/' + id + '/variants-summary'),
       ]);
       const metrics = {};
-      summary.forEach(vs => { metrics[vs.id] = vs.aggregate_metrics; });
+      const extra = {};
+      summary.forEach(vs => {
+        metrics[vs.id] = vs.aggregate_metrics;
+        extra[vs.id] = { pairs: vs.pairs || [], timeframes: vs.timeframes || [] };
+      });
       setData(updated);
       setVarMetrics(metrics);
+      setVarExtra(extra);
     }
   };
 
@@ -220,9 +231,9 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             <h1 className="text-2xl font-bold text-white mb-1">{data.name}</h1>
             <p className="text-slate-400 text-sm mb-3">{data.description || 'Pas de description'}</p>
             <div className="flex gap-4 text-sm text-slate-400">
-              <span>📈 {(data.pairs || []).join(', ') || '—'}</span>
-              <span>⏱ {(data.timeframes || []).join(', ') || '—'}</span>
-              <span>📅 {formatDate(data.created_at)}</span>
+              <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> {(data.pairs || []).join(', ') || '—'}</span>
+              <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> {(data.timeframes || []).join(', ') || '—'}</span>
+              <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {formatDate(data.created_at)}</span>
             </div>
           </div>
           <div className="flex gap-2">
@@ -288,6 +299,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 [&>a]:h-full">
             {data.variants.map(v => {
               const m = varMetrics[v.id];
+              const ex = varExtra[v.id] || {};
               const desc = richTextPlain(v.description, 100);
 
               return (
@@ -298,7 +310,9 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
                   badge={<StatusBadge status={v.status} />}
                   description={desc}
                   metrics={m}
-                  footer={<span>📅 {formatDate(v.created_at)}</span>}
+                  pairs={ex.pairs}
+                  timeframes={ex.timeframes}
+                  footer={<span className="flex items-center gap-1"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {formatDate(v.created_at)}</span>}
                 />
               );
             })}

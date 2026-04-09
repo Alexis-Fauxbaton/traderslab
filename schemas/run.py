@@ -14,6 +14,8 @@ class RunOut(BaseModel):
     initial_balance: float | None = 10000.0
     currency: str | None = "USD"
     currency_source: str | None = "detected"
+    timeframe: str | None = None
+    pairs: list[str] | None = None
     metrics: dict[str, Any] | None
 
     model_config = {"from_attributes": True}

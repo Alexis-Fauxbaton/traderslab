@@ -47,6 +47,25 @@ def _backfill_metrics():
     finally:
         db.close()
 
+
+@app.on_event("startup")
+def _backfill_run_pairs():
+    """Backfill pairs on runs that don't have them yet."""
+    from models.run import Run
+    from models.trade import Trade
+    from sqlalchemy import func
+    db = SessionLocal()
+    try:
+        runs_without = db.query(Run).filter(Run.pairs.is_(None)).all()
+        for run in runs_without:
+            symbols = db.query(Trade.symbol).filter(Trade.run_id == run.id).distinct().all()
+            if symbols:
+                run.pairs = sorted({s[0] for s in symbols})
+        if runs_without:
+            db.commit()
+    finally:
+        db.close()
+
 # Choix du frontend : React (frontend-react/dist) si buildé, sinon vanilla (frontend/)
 _react_dist = os.path.join(os.path.dirname(__file__), "frontend-react", "dist")
 _use_react = os.path.isdir(_react_dist) and os.path.isfile(os.path.join(_react_dist, "index.html"))

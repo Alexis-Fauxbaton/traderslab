@@ -89,7 +89,7 @@ export default function ImportCSV() {
     const label = document.querySelector('[name=label]')?.value?.trim();
     const runType = document.querySelector('[name=run_type]')?.value;
     const balanceInput = document.querySelector('[name=initial_balance]')?.value?.trim();
-    const currencyInput = document.querySelector('[name=currency]')?.value?.trim();
+    const timeframeInput = document.querySelector('[name=timeframe]')?.value?.trim();
     if (!label) return alert('Le label est requis');
     if (!csvFile) return alert('Aucun fichier sélectionné');
 
@@ -99,7 +99,7 @@ export default function ImportCSV() {
     fd.append('label', label);
     fd.append('type', runType);
     if (balanceInput) fd.append('initial_balance', balanceInput);
-    if (currencyInput) fd.append('currency', currencyInput);
+    if (timeframeInput) fd.append('timeframe', timeframeInput);
     fd.append('file', csvFile);
     if (hasMapping) fd.append('column_mapping', JSON.stringify(mapping));
 
@@ -149,7 +149,7 @@ export default function ImportCSV() {
               { value: 'live', label: 'Live' },
             ]} />
             <InputField name="initial_balance" label="Capital initial" type="number" placeholder="Auto-détecté depuis le CSV" />
-            <InputField name="currency" label="Devise du compte" placeholder="Auto-détecté (ex: USD, EUR)" />
+            <InputField name="timeframe" label="Timeframe (optionnel)" placeholder="Ex: M15, H1, H4, D1" />
           </div>
 
           {/* Format selector */}
