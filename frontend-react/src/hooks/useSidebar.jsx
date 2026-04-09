@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import API from '../lib/api';
+import { useAuth } from './useAuth';
 
 const SidebarContext = createContext();
 
@@ -21,11 +22,13 @@ function sortData(data) {
 }
 
 export function SidebarProvider({ children }) {
+  const { user } = useAuth();
   const [sidebarData, setSidebarData] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
+    if (!user) { setSidebarData([]); setLoading(false); return; }
     try {
       const strategies = await API.get('/strategies');
       // Fetch all strategy details in parallel
@@ -36,7 +39,7 @@ export function SidebarProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => { reload(); }, [reload]);
 
