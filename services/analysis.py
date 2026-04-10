@@ -270,9 +270,11 @@ def _collect_warnings(m: dict[str, Any], context: dict[str, Any]) -> list[Warnin
             message=f"Sharpe de {sharpe:.2f} malgré un PnL positif — rendement très variable.",
         ))
 
-    # Retourner max 4 warnings, priorisés : risque > fiabilité > qualité
-    priority = {WarningFamily.risque: 0, WarningFamily.fiabilite: 1, WarningFamily.qualite: 2}
-    warnings.sort(key=lambda w: priority.get(w.family, 99))
+    # Retourner max 4 warnings, priorisés.
+    # Échantillon faible toujours en P0 : si on a peu de trades, tout le
+    # reste est peu fiable → "tester plus" doit être le premier message.
+    family_priority = {WarningFamily.risque: 1, WarningFamily.fiabilite: 2, WarningFamily.qualite: 3}
+    warnings.sort(key=lambda w: (0 if w.code == "SMALL_SAMPLE" else family_priority.get(w.family, 99)))
     return warnings[:4]
 
 
@@ -442,6 +444,20 @@ _VERDICT_LABELS = {
 }
 
 
+def compute_verdict_only(metrics: dict[str, Any]) -> tuple[str, str]:
+    """Calcul léger du verdict sans synthèse/action/warnings détaillés.
+
+    Returns (verdict_value, verdict_label) — ex. ("prometteuse", "Prometteuse").
+    """
+    if not metrics or metrics.get("total_trades", 0) == 0:
+        return ("fragile", "Fragile")
+    context = _build_context(metrics)
+    warnings = _collect_warnings(metrics, context)
+    score = _compute_internal_score(metrics)
+    verdict = _determine_verdict(score, metrics, warnings)
+    return (verdict.value, _VERDICT_LABELS[verdict])
+
+
 # ══════════════════════════════════════════════════════════════
 # Phrase de synthèse
 # ══════════════════════════════════════════════════════════════
@@ -469,13 +485,16 @@ def _build_synthesis(verdict: Verdict, m: dict[str, Any], warnings: list[Warning
         strength = "Résultats positifs"
     elif expectancy > 0:
         strength = "Espérance positive"
+    elif pnl <= 0:
+        strength = "Résultats négatifs pour l'instant"
     else:
-        strength = "Bonne base de travail"
+        strength = "Données insuffisantes"
 
     # ---- Limite ----
     limit = None
     if total_trades < _MIN_TRADES_CONFIRM:
-        limit = "échantillon encore trop faible"
+        remaining = _MIN_TRADES_CONFIRM - total_trades
+        limit = f"échantillon trop faible — encore au moins {remaining} trades pour conclure"
     elif any(w.code == "HIGH_DRAWDOWN" for w in warnings):
         limit = "drawdown trop élevé pour être rassurant"
     elif any(w.code == "SINGLE_TRADE_DOMINANCE" for w in warnings):
@@ -527,7 +546,12 @@ def _recommend_action(
     total_trades = m.get("total_trades", 0)
     pnl = m.get("total_pnl", 0)
 
-    if verdict == Verdict.solide:
+    # P0 : peu de trades → toujours "continuer le test", quel que soit le verdict
+    if total_trades < _MIN_TRADES_CONFIRM:
+        remaining = max(0, _MIN_TRADES_CONFIRM - total_trades)
+        primary = ActionType.continuer_test
+        secondary = f"Accumuler au moins {remaining} trades de plus avant toute conclusion"
+    elif verdict == Verdict.solide:
         primary = ActionType.forward_test
         secondary = "Promouvoir en active si le forward test confirme" if total_trades >= 50 else None
     elif verdict == Verdict.prometteuse:
@@ -535,9 +559,6 @@ def _recommend_action(
         secondary_parts = []
         if has_parent:
             secondary_parts.append("comparer à la variante mère")
-        remaining = max(0, _MIN_TRADES_CONFIRM - total_trades)
-        if remaining > 0:
-            secondary_parts.append(f"après {remaining} trades de plus")
         secondary = " ".join(secondary_parts) if secondary_parts else None
     elif verdict == Verdict.a_confirmer:
         primary = ActionType.continuer_test

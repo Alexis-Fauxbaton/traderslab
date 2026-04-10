@@ -1,3 +1,5 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -161,7 +163,10 @@ def variants_summary(strategy_id: str, db: Session = Depends(get_db), current_us
         all_timeframes: set[str] = set()
         for r in v_runs:
             if r.pairs:
-                all_pairs.update(r.pairs)
+                pairs_val = r.pairs
+                if isinstance(pairs_val, str):
+                    pairs_val = json.loads(pairs_val)
+                all_pairs.update(pairs_val)
             if r.timeframe:
                 all_timeframes.add(r.timeframe)
         variant_dict["pairs"] = sorted(all_pairs)

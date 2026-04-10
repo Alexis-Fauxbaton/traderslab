@@ -5,6 +5,7 @@ from database import get_db
 from models.variant import Variant
 from models.strategy import Strategy
 from models.run import Run
+from models.trade import Trade
 from models.user import User
 from schemas.variant import (
     VariantCreate,
@@ -105,6 +106,18 @@ def update_variant(variant_id: str, payload: VariantUpdate, db: Session = Depend
 @router.delete("/{variant_id}", status_code=204)
 def delete_variant(variant_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     variant = _verify_variant_owner(variant_id, db, current_user)
+
+    # Nullify parent_variant_id on child variants
+    db.query(Variant).filter(Variant.parent_variant_id == variant.id).update(
+        {"parent_variant_id": None}, synchronize_session="fetch"
+    )
+
+    # Delete trades belonging to this variant's runs, then runs
+    run_ids = [r.id for r in db.query(Run.id).filter(Run.variant_id == variant.id).all()]
+    if run_ids:
+        db.query(Trade).filter(Trade.run_id.in_(run_ids)).delete(synchronize_session="fetch")
+        db.query(Run).filter(Run.variant_id == variant.id).delete(synchronize_session="fetch")
+
     db.delete(variant)
     db.commit()
 

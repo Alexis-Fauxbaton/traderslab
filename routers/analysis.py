@@ -17,7 +17,7 @@ from models.trade import Trade
 from models.user import User
 from schemas.analysis import VariantAnalysisOut, CompareAnalysisOut
 from services.metrics import compute_metrics
-from services.analysis import analyze_variant, compare_variants
+from services.analysis import analyze_variant, compare_variants, compute_verdict_only
 from services.auth import get_current_user
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
@@ -169,3 +169,20 @@ def _compare_to_dict(result) -> dict:
     for w in d["warnings"]:
         w["family"] = w["family"].value if hasattr(w["family"], "value") else w["family"]
     return d
+
+
+@router.get("/verdicts/{strategy_id}")
+def get_strategy_verdicts(strategy_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Retourne le verdict léger pour chaque variante d'une stratégie."""
+    strategy = db.query(Strategy).filter(Strategy.id == strategy_id, Strategy.user_id == current_user.id).first()
+    if not strategy:
+        raise HTTPException(404, "Stratégie introuvable")
+
+    variants = db.query(Variant).filter(Variant.strategy_id == strategy_id).all()
+    result = {}
+    for v in variants:
+        metrics = v.aggregate_metrics
+        if metrics and metrics.get("total_trades", 0) > 0:
+            verdict_val, verdict_label = compute_verdict_only(metrics)
+            result[v.id] = {"verdict": verdict_val, "verdict_label": verdict_label}
+    return result

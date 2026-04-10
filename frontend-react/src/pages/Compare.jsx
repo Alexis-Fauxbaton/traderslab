@@ -7,7 +7,7 @@ import API from '../lib/api';
 import { useSidebar } from '../hooks/useSidebar';
 import {
   formatDate, formatPercent, setCurrentAvgLoss, getUnitSettings,
-  STATUS_LABELS, getCurrencySymbol,
+  STATUS_LABELS,
 } from '../lib/utils';
 import { Spinner, StatusBadge, PnlSpan, DrawdownSpan } from '../components/UI';
 import { ComparisonEvaluationPanel } from '../components/EvaluationPanel';
@@ -289,7 +289,6 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
   const _unitSettings = getUnitSettings();
 
   // Metric formatting helpers
-  const [ddMode, setDdMode] = useState('amount'); // 'amount' | 'pct'
   const fmtVal = (val, fmt, ddPeak, avgLoss, metrics) => {
     if (val == null) return '—';
     if (fmt === 'pct') return formatPercent(val);
@@ -297,10 +296,13 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
     if (fmt === 'int') return String(val);
     setCurrentAvgLoss(avgLoss);
     if (fmt === 'dd') {
-      if (ddMode === 'pct' && metrics?.max_drawdown_pct_true != null) {
+      return <DrawdownSpan value={val} ddPeak={_unitSettings.initial_balance + (ddPeak || 0)} />;
+    }
+    if (fmt === 'dd_pct') {
+      if (metrics?.max_drawdown_pct_true != null) {
         return <span className="text-red-400">{(-metrics.max_drawdown_pct_true * 100).toFixed(2)}%</span>;
       }
-      return <DrawdownSpan value={val} ddPeak={_unitSettings.initial_balance + (ddPeak || 0)} />;
+      return '—';
     }
     return <PnlSpan value={val} />;
   };
@@ -311,7 +313,8 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
     { key: 'total_trades', label: 'Trades', fmt: 'int' },
     { key: 'win_rate', label: 'Win Rate', fmt: 'pct' },
     { key: 'profit_factor', label: 'Profit Factor', fmt: 'num' },
-    { key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd', toggleable: true },
+    { key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd' },
+    { key: 'max_drawdown_pct_true', label: 'Max DD % from peak', fmt: 'dd_pct' },
     { key: 'expectancy', label: 'Expectancy' },
     { key: 'avg_win', label: 'Avg Win' },
     { key: 'avg_loss', label: 'Avg Loss' },
@@ -455,23 +458,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                     <tbody>
                       {metricRows.map(r => (
                         <tr key={r.key} className="border-b border-slate-700/50 hover:bg-slate-700/20">
-                          <td className="py-2.5 px-4 text-slate-300">
-                            {r.toggleable ? (
-                              <span className="flex items-center gap-1">
-                                {r.label}
-                                <button
-                                  onClick={() => setDdMode(m => m === 'amount' ? 'pct' : 'amount')}
-                                  className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition
-                                    bg-slate-700/80 border-slate-500/50 text-slate-200 hover:bg-slate-600 hover:border-slate-400 active:scale-95"
-                                  title="Basculer entre montant et %"
-                                >
-                                  <span className={ddMode === 'amount' ? 'text-white' : 'text-slate-500'}>{getCurrencySymbol()}</span>
-                                  <span className="text-slate-600">/</span>
-                                  <span className={ddMode === 'pct' ? 'text-white' : 'text-slate-500'}>%</span>
-                                </button>
-                              </span>
-                            ) : r.label}
-                          </td>
+                          <td className="py-2.5 px-4 text-slate-300">{r.label}</td>
                           <td className={`py-2.5 px-4 text-center ${diff[r.key] === 'A' ? 'bg-green-900/20' : ''}`}>
                             {fmtVal(ma[r.key], r.fmt, ma.dd_peak_equity, ma.avg_loss, ma)}
                             {diff[r.key] === 'A' && <span className="text-green-400 text-xs ml-1">✓</span>}

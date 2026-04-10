@@ -104,6 +104,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
   const [data, setData] = useState(null);
   const [varMetrics, setVarMetrics] = useState({});
   const [varExtra, setVarExtra] = useState({});   // pairs + timeframes per variant
+  const [varVerdicts, setVarVerdicts] = useState({}); // verdict per variant
   const [view, setView] = useState('grid');
   const [showEdit, setShowEdit] = useState(false);
   const [editKey, setEditKey] = useState(0);
@@ -132,6 +133,8 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
       setVarMetrics(metrics);
       setVarExtra(extra);
       try { localStorage.setItem('lastVisit', JSON.stringify({ hash: '/strategy/' + id, ts: Date.now(), crumbs: [{ label: 'Stratégies', href: '#/' }, { label: stratData.name }] })); } catch {}
+      // Fetch verdicts (non-blocking)
+      API.get('/analysis/verdicts/' + id).then(v => setVarVerdicts(v || {})).catch(() => {});
     })();
   }, [id]);
 
@@ -193,6 +196,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
       setData(updated);
       setVarMetrics(metrics);
       setVarExtra(extra);
+      API.get('/analysis/verdicts/' + id).then(v => setVarVerdicts(v || {})).catch(() => {});
     }
   };
 
@@ -300,6 +304,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             {data.variants.map(v => {
               const m = varMetrics[v.id];
               const ex = varExtra[v.id] || {};
+              const vd = varVerdicts[v.id];
               const desc = richTextPlain(v.description, 100);
 
               return (
@@ -312,6 +317,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
                   metrics={m}
                   pairs={ex.pairs}
                   timeframes={ex.timeframes}
+                  verdict={vd}
                   footer={<span className="flex items-center gap-1"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {formatDate(v.created_at)}</span>}
                 />
               );

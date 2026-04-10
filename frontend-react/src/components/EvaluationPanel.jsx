@@ -40,6 +40,7 @@ export function EvaluationPanel({ result, title = 'Évaluation' }) {
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           {title}
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 border border-amber-700/50 uppercase tracking-wider">Beta</span>
         </h2>
         <div className="flex items-center gap-3">
           <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${vc.badge}`}>
@@ -95,6 +96,7 @@ export function ComparisonEvaluationPanel({ result }) {
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-widest flex items-center gap-2">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-500"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
           Évaluation comparative
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 border border-amber-700/50 uppercase tracking-wider">Beta</span>
         </h2>
         <span className="text-xs font-semibold text-slate-200 bg-slate-700/60 ring-1 ring-slate-600/50 px-3 py-1 rounded-full">
           {result.decision_label}

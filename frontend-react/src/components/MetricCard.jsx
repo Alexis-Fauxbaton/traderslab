@@ -14,7 +14,14 @@ import { formatDate, setCurrentAvgLoss, richTextPlain } from '../lib/utils';
  *  - metrics: objet métriques agrégées (equity_curve, total_pnl, profit_factor, avg_win, avg_loss, total_trades)
  *  - footer: éléments supplémentaires en bas (pairs, date, trades, etc.)
  */
-export default function MetricCard({ to, title, badge, description, metrics, pairs, timeframes, footer }) {
+const VERDICT_STYLES = {
+  solide:      'bg-green-900/40 text-green-400 border-green-700/50',
+  prometteuse: 'bg-blue-900/40 text-blue-400 border-blue-700/50',
+  a_confirmer: 'bg-amber-900/40 text-amber-400 border-amber-700/50',
+  fragile:     'bg-red-900/40 text-red-400 border-red-700/50',
+};
+
+export default function MetricCard({ to, title, badge, description, metrics, pairs, timeframes, verdict, footer }) {
   const m = metrics;
   const hasMet = m && m.total_trades > 0;
   if (hasMet) setCurrentAvgLoss(m.avg_loss);
@@ -51,6 +58,11 @@ export default function MetricCard({ to, title, badge, description, metrics, pai
       <div className="flex items-center gap-3 text-xs text-slate-500">
         {footer}
         {hasMet && <span>{m.total_trades} trades</span>}
+        {verdict && (
+          <span className={`ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full border ${VERDICT_STYLES[verdict.verdict] || 'bg-slate-700 text-slate-300 border-slate-600'}`}>
+            {verdict.verdict_label}
+          </span>
+        )}
       </div>
     </Link>
   );

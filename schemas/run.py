@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+import json
+from pydantic import BaseModel, field_validator
 from datetime import date, datetime
 from typing import Any
 
@@ -16,6 +17,13 @@ class RunOut(BaseModel):
     currency_source: str | None = "detected"
     timeframe: str | None = None
     pairs: list[str] | None = None
+
+    @field_validator("pairs", mode="before")
+    @classmethod
+    def _parse_pairs(cls, v):
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
     metrics: dict[str, Any] | None
 
     model_config = {"from_attributes": True}

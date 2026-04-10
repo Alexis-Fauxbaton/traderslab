@@ -161,6 +161,8 @@ export default function VariantDetail({ setCompareSlotA }) {
   const [showDuplicate, setShowDuplicate] = useState(false);
   const [textFieldsOpen, setTextFieldsOpen] = useState(false);
   const [variantEval, setVariantEval] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -252,7 +254,11 @@ export default function VariantDetail({ setCompareSlotA }) {
   };
 
   const handlePromote = async () => {
-    if (!confirm('Promouvoir "' + data.name + '" comme version active ?')) return;
+    setShowPromoteConfirm(true);
+  };
+
+  const confirmPromote = async () => {
+    setShowPromoteConfirm(false);
     await API.put('/variants/' + id, { status: 'active' });
     await reload();
     const updated = await API.get('/variants/' + id);
@@ -260,7 +266,11 @@ export default function VariantDetail({ setCompareSlotA }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Supprimer cette variante ?')) return;
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    setShowDeleteConfirm(false);
     await API.del('/variants/' + id);
     await reload();
     navigate('/strategy/' + data.strategy_id);
@@ -465,6 +475,41 @@ export default function VariantDetail({ setCompareSlotA }) {
           <InputField name="name" label="Nom de la nouvelle itération" required defaultValue={'Copie — ' + data.name} />
           <InputField name="key_change" label="Changement clé" placeholder="Qu'est-ce qui change par rapport à la version précédente ?" />
           <TextareaField name="change_reason" label="Pourquoi tu le testes" />
+        </Modal>
+      )}
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <Modal title="Supprimer cette variante" onClose={() => setShowDeleteConfirm(false)} customFooter={
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition">Annuler</button>
+            <button onClick={confirmDelete} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition font-semibold">Supprimer</button>
+          </div>
+        }>
+          <div className="text-slate-300 mb-4">
+            <p className="mb-3">Êtes-vous sûr de vouloir supprimer la variante <span className="font-semibold text-white">"{data.name}"</span> ?</p>
+            <p className="text-sm text-slate-400">Cette action est irréversible et supprimera :</p>
+            <ul className="text-sm text-slate-400 list-disc list-inside mt-2 ml-1">
+              <li>Tous les runs associés à cette variante</li>
+              <li>Tous les trades de ces runs</li>
+              <li>Toutes les variantes enfants (si applicable)</li>
+            </ul>
+          </div>
+        </Modal>
+      )}
+
+      {/* Promote confirmation modal */}
+      {showPromoteConfirm && (
+        <Modal title="Promouvoir en version active" onClose={() => setShowPromoteConfirm(false)} customFooter={
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowPromoteConfirm(false)} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition">Annuler</button>
+            <button onClick={confirmPromote} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition font-semibold">Promouvoir</button>
+          </div>
+        }>
+          <div className="text-slate-300">
+            <p className="mb-2">Promouvoir la variante <span className="font-semibold text-white">"{data.name}"</span> comme version active de la stratégie <span className="font-semibold text-white">"{stratName}"</span> ?</p>
+            <p className="text-sm text-slate-400 mt-4">Une seule variante peut être la version active à la fois.</p>
+          </div>
         </Modal>
       )}
     </div>

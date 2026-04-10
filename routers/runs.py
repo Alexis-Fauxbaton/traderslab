@@ -13,6 +13,7 @@ from models.user import User
 from schemas.run import RunOut, RunDetail, RunImportResponse, TradesPaginated
 from schemas.trade import TradeOut
 from services.csv_parser import parse_csv
+from services.mt5_parser import parse_mt5_excel, preview_mt5_excel
 from services.metrics import compute_metrics, _compute_sharpe_annualized
 from services.aggregation import recompute_variant_metrics, recompute_strategy_metrics, recompute_run_metrics, _run_metrics_stale
 from services.auth import get_current_user
@@ -127,6 +128,23 @@ def delete_run(run_id: str, db: Session = Depends(get_db), current_user: User = 
     db.commit()
 
 
+@router.post("/preview")
+async def preview_file(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Preview parsing of an MT5 Excel file: column mapping + first trades."""
+    content = await file.read()
+    filename = (file.filename or "").lower()
+    is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
+
+    if not is_excel:
+        raise HTTPException(400, "Preview disponible uniquement pour les fichiers Excel MT5")
+
+    result = preview_mt5_excel(content)
+    return result
+
+
 @router.post("/import", response_model=RunImportResponse)
 async def import_csv(
     variant_id: str = Form(...),
@@ -170,9 +188,15 @@ async def import_csv(
         except json.JSONDecodeError:
             raise HTTPException(400, "column_mapping n'est pas un JSON valide")
 
-    # Étape 1-3 : Parser et valider le CSV
+    # Étape 1-3 : Parser et valider le fichier
     content = await file.read()
-    trades_data, parse_errors, detected_balance, detected_currency = parse_csv(content, mapping)
+    filename = (file.filename or "").lower()
+    is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
+
+    if is_excel:
+        trades_data, parse_errors, detected_balance, detected_currency = parse_mt5_excel(content)
+    else:
+        trades_data, parse_errors, detected_balance, detected_currency = parse_csv(content, mapping)
 
     # Résoudre la balance initiale : formulaire > CSV > défaut
     resolved_balance = initial_balance or detected_balance or 10000.0
