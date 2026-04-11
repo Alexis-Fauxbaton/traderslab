@@ -11,5 +11,6 @@ dependencies = [
     "pandas>=2.2",
     "python-multipart>=0.0.18",
     "psycopg2-binary>=2.9",
+    "metaapi-cloud-sdk>=29.0",
 ]
 

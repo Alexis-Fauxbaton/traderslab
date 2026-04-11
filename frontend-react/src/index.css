@@ -367,6 +367,85 @@ html.light .compare-drop { border-color: rgba(0,0,0,.14) !important; }
 html.light .compare-drop.has-variant  { border-color: rgba(0,0,0,.10) !important; }
 html.light .compare-drop.drag-over   { border-color: #0071e3 !important; background: rgba(0,113,227,.04) !important; }
 
+/* ============================================================
+   ONBOARDING
+   ============================================================ */
+.onboarding-tooltip {
+  background: #1c2333;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 14px;
+  padding: 18px 20px;
+  max-width: 340px;
+  min-width: 260px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(99, 102, 241, 0.12);
+  animation: onboarding-pop 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes onboarding-pop {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0); }
+}
+
+/* Arrow */
+.onboarding-arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #1c2333;
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  transform: rotate(45deg);
+}
+.onboarding-arrow-top {
+  top: -7px;
+  border-bottom: none;
+  border-right: none;
+}
+.onboarding-arrow-bottom {
+  bottom: -7px;
+  border-top: none;
+  border-left: none;
+}
+.onboarding-arrow-left {
+  left: -7px;
+  border-top: none;
+  border-right: none;
+}
+.onboarding-arrow-right {
+  right: -7px;
+  border-bottom: none;
+  border-left: none;
+}
+
+/* Highlight ring */
+.onboarding-highlight {
+  position: relative;
+  z-index: 100001;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.45), 0 0 24px rgba(99, 102, 241, 0.2) !important;
+  border-radius: 10px;
+  animation: onboarding-pulse 2s ease-in-out infinite;
+}
+@keyframes onboarding-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.45), 0 0 24px rgba(99, 102, 241, 0.2); }
+  50%      { box-shadow: 0 0 0 6px rgba(99, 102, 241, 0.3),  0 0 32px rgba(99, 102, 241, 0.15); }
+}
+
+/* Light mode */
+html.light .onboarding-tooltip {
+  background: #ffffff;
+  border-color: rgba(0, 113, 227, 0.25);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 113, 227, 0.1);
+}
+html.light .onboarding-tooltip h3 { color: #1d1d1f !important; }
+html.light .onboarding-tooltip p  { color: #6e6e73 !important; }
+html.light .onboarding-arrow {
+  background: #ffffff;
+  border-color: rgba(0, 113, 227, 0.25);
+}
+html.light .onboarding-highlight {
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.35), 0 0 24px rgba(0, 113, 227, 0.15) !important;
+}
+html.light .onboarding-overlay rect[fill] { fill: rgba(0, 0, 0, 0.35); }
+
 html.light .metric-card {
   box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 2px 10px rgba(0,0,0,.07) !important;
 }

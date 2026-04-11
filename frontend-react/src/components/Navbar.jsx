@@ -33,8 +33,8 @@ export default function Navbar({ onToggleSidebar, onLogout, user, onUpdateUser }
   }, []);
 
   const infoTexts = {
-    pct: 'PnL, expectancy, avg… → % du capital initial. Drawdown → % du pic equity. Trade → % du solde avant le trade.',
-    R: 'R = valeur / |avg loss|. Le risque moyen est calculé automatiquement depuis le avg_loss du run affiché.',
+    pct: 'Résultat, gain moyen, etc. → % du capital initial. Perte max → % du pic.',
+    R: 'R = valeur / |perte moyenne|. Calculé automatiquement depuis la perte moyenne du test affiché.',
   };
 
   return (
@@ -51,9 +51,10 @@ export default function Navbar({ onToggleSidebar, onLogout, user, onUpdateUser }
         <div className="flex items-center gap-1">
           <Link to="/" className="nav-link">Dashboard</Link>
           <Link to="/compare" className="nav-link">Comparer</Link>
+          <Link to="/mt5-sync" className="nav-link">Connexion Live</Link>
           <div className="flex items-center gap-1 ml-2 pl-3 border-l border-white/[0.08]">
             <select value={unit} onChange={handleUnitChange} className="select-ghost text-xs" title="Unité d'affichage">
-              <option value="cash">{getCurrencySymbol()} Cash</option>
+              <option value="cash">{getCurrencySymbol()} Montant</option>
               <option value="pct">%</option>
               <option value="R">R</option>
             </select>

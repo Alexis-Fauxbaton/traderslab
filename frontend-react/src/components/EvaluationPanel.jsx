@@ -124,8 +124,8 @@ export function ComparisonEvaluationPanel({ result }) {
             <thead>
               <tr className="border-b border-slate-600/40 text-slate-500 bg-slate-900/30">
                 <th className="py-2.5 px-4 text-left font-semibold">KPI</th>
-                <th className="py-2.5 px-4 text-center font-semibold">Variante A</th>
-                <th className="py-2.5 px-4 text-center font-semibold">Variante B</th>
+                <th className="py-2.5 px-4 text-center font-semibold">Version A</th>
+                <th className="py-2.5 px-4 text-center font-semibold">Version B</th>
               </tr>
             </thead>
             <tbody>

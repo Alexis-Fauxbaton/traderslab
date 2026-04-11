@@ -57,6 +57,10 @@ def run_migrations():
                            _col_type("TEXT", "TEXT"))
     _add_column_if_missing(insp, "runs", "pairs",
                            _col_type("TEXT", "TEXT"))
+    _add_column_if_missing(insp, "trades", "external_ticket",
+                           _col_type("TEXT", "TEXT"))
+    _add_column_if_missing(insp, "mt5_connections", "investor_password_enc",
+                           _col_type("TEXT", "TEXT"))
 
     # Migrate market → pairs, timeframe → timeframes (JSON arrays)
     _migrate_strategy_pairs_timeframes(insp)
@@ -66,6 +70,7 @@ def run_migrations():
     _create_index_if_missing("ix_runs_variant_id", "runs", "variant_id")
     _create_index_if_missing("ix_variants_strategy_id", "variants", "strategy_id")
     _create_index_if_missing("ix_variants_parent_variant_id", "variants", "parent_variant_id")
+    _create_index_if_missing("ix_trades_external_ticket", "trades", "external_ticket")
 
 
 def _add_column_if_missing(insp, table: str, column: str, col_type: str):

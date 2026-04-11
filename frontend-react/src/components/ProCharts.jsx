@@ -46,7 +46,7 @@ export function EquityChart({ equityCurve, initialBalance: propBalance = 10000 }
       data: {
         labels,
         datasets: [{
-          label: 'PnL Cumulé',
+          label: 'Résultat cumulé',
           data: values,
           borderColor: color,
           backgroundColor: bgColor,
@@ -71,8 +71,8 @@ export function EquityChart({ equityCurve, initialBalance: propBalance = 10000 }
           tooltip: {
             callbacks: {
               label: (ctx) => dataMode === 'equity'
-                ? `Equity: ${ctx.parsed.y.toFixed(2)}`
-                : `PnL: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`,
+                ? `Capital: ${ctx.parsed.y.toFixed(2)}`
+                : `Résultat: ${ctx.parsed.y >= 0 ? '+' : ''}${ctx.parsed.y.toFixed(2)}`,
             },
           },
         },
@@ -95,15 +95,15 @@ export function EquityChart({ equityCurve, initialBalance: propBalance = 10000 }
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Évolution du PnL</h3>
+        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Évolution du capital</h3>
         <div className="flex items-center gap-3">
           <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
             <button onClick={() => setDataMode('pnl')}
               className={`px-3 py-1 transition ${dataMode === 'pnl' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-            >PnL</button>
+            >Résultat</button>
             <button onClick={() => setDataMode('equity')}
               className={`px-3 py-1 transition ${dataMode === 'equity' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-            >Equity</button>
+            >Capital</button>
           </div>
           <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
             <button onClick={() => setMode('trade')}
@@ -261,12 +261,12 @@ export function UnderwaterChart({ underwater, underwaterPct, equityCurve }) {
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Underwater (Drawdown)</h3>
+        <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Périodes de perte</h3>
         <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
           <button
             onClick={() => setMode('prix')}
             className={`px-3 py-1 transition ${mode === 'prix' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-          >Prix</button>
+          >Montant</button>
           <button
             onClick={() => setMode('pct')}
             className={`px-3 py-1 transition ${mode === 'pct' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
@@ -286,10 +286,10 @@ export function ProMetricsGrid({ metrics }) {
   if (!metrics) return null;
   const m = metrics;
   const cards = [
-    { label: 'Recovery Factor', value: m.recovery_factor, fmt: v => v?.toFixed(2) ?? '—' },
-    { label: 'Risk/Reward', value: m.risk_reward_ratio, fmt: v => v?.toFixed(2) ?? '—' },
-    { label: 'Max Win Streak', value: m.max_consecutive_wins, fmt: v => v ?? '—' },
-    { label: 'Max Loss Streak', value: m.max_consecutive_losses, fmt: v => v ?? '—' },
+    { label: 'Récupération', value: m.recovery_factor, fmt: v => v?.toFixed(2) ?? '—' },
+    { label: 'Ratio risque/gain', value: m.risk_reward_ratio, fmt: v => v?.toFixed(2) ?? '—' },
+    { label: 'Série de gains max', value: m.max_consecutive_wins, fmt: v => v ?? '—' },
+    { label: 'Série de pertes max', value: m.max_consecutive_losses, fmt: v => v ?? '—' },
   ].filter(c => c.value != null);
 
   if (cards.length === 0) return null;

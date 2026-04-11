@@ -20,7 +20,7 @@ export default function RunDetail() {
   const [tradesMeta, setTradesMeta] = useState(null);
   const [showTrades, setShowTrades] = useState(false);
   const [stratName, setStratName] = useState('Stratégie');
-  const [variantName, setVariantName] = useState('Variante');
+  const [variantName, setVariantName] = useState('Version');
   const [stratId, setStratId] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
   const [ddHighlight, setDdHighlight] = useState('off'); // 'off' | 'amount' | 'pct'
@@ -40,7 +40,7 @@ export default function RunDetail() {
     (async () => {
       const runData = await API.get('/runs/' + id + '/summary');
       setData(runData);
-      let sn = 'Stratégie', vn = 'Variante', sid = '';
+      let sn = 'Stratégie', vn = 'Version', sid = '';
       try {
         const variant = await API.get('/variants/' + runData.variant_id);
         vn = variant.name; sid = variant.strategy_id;
@@ -137,8 +137,8 @@ export default function RunDetail() {
       data: {
         labels,
         datasets: [
-          { label: equityDataMode === 'equity' ? 'Equity' : 'PnL Cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: equityMode === 'day' ? 3 : (values.length > 200 ? 0 : 2), pointHoverRadius: 6 },
-          { label: 'Max Drawdown', data: ddData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.25)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ef4444', borderWidth: 2, borderDash: [4, 2], hidden: ddHighlight === 'off' },
+          { label: equityDataMode === 'equity' ? 'Capital' : 'Résultat cumulé', data: values, borderColor: color, backgroundColor: bgColor, fill: true, tension: 0.3, pointRadius: equityMode === 'day' ? 3 : (values.length > 200 ? 0 : 2), pointHoverRadius: 6 },
+          { label: 'Perte max', data: ddData, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.25)', fill: true, tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ef4444', borderWidth: 2, borderDash: [4, 2], hidden: ddHighlight === 'off' },
         ],
       },
       options: {
@@ -165,8 +165,8 @@ export default function RunDetail() {
                   return `DD: ${(v - peak).toFixed(2)}`;
                 }
                 return equityDataMode === 'equity'
-                  ? `Equity: ${v.toFixed(2)}`
-                  : `PnL: ${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
+                  ? `Capital: ${v.toFixed(2)}`
+                  : `Résultat: ${v >= 0 ? '+' : ''}${v.toFixed(2)}`;
               },
             },
           },
@@ -205,7 +205,7 @@ export default function RunDetail() {
   const _maxDdPct = m.max_drawdown_pct_true != null ? -m.max_drawdown_pct_true * 100 : null;
 
   const handleDelete = async () => {
-    if (!confirm('Supprimer ce run ?')) return;
+    if (!confirm('Supprimer ce test ?')) return;
     try {
       await API.del('/runs/' + id);
       navigate('/variant/' + data.variant_id);
@@ -241,21 +241,21 @@ export default function RunDetail() {
 
       {/* Metrics grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-        <MetricCardLarge label="Total PnL"><PnlSpan value={m.total_pnl} /></MetricCardLarge>
+        <MetricCardLarge label="Résultat net"><PnlSpan value={m.total_pnl} /></MetricCardLarge>
         <MetricCardLarge label="Trades">{m.total_trades || 0}</MetricCardLarge>
-        <MetricCardLarge label="Win Rate">{formatPercent(m.win_rate)}</MetricCardLarge>
-        <MetricCardLarge label="Profit Factor">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</MetricCardLarge>
+        <MetricCardLarge label="Taux de réussite">{formatPercent(m.win_rate)}</MetricCardLarge>
+        <MetricCardLarge label="Ratio gains/pertes">{m.profit_factor != null ? m.profit_factor.toFixed(2) : '—'}</MetricCardLarge>
         <DrawdownCard value={m.max_drawdown} ddPeak={_ddPeak} pctTrue={m.max_drawdown_pct_true} size="lg" />
-        <MetricCardLarge label="Expectancy"><PnlSpan value={m.expectancy} /></MetricCardLarge>
-        <MetricCardLarge label="Avg Win"><PnlSpan value={m.avg_win} /></MetricCardLarge>
-        <MetricCardLarge label="Avg Loss"><PnlSpan value={m.avg_loss} /></MetricCardLarge>
-        <MetricCardLarge label="Best Trade"><PnlSpan value={m.best_trade} /></MetricCardLarge>
-        <MetricCardLarge label="Worst Trade"><PnlSpan value={m.worst_trade} /></MetricCardLarge>
-        <MetricCardLarge label="Sharpe (ann.)">{m.sharpe_ratio != null ? m.sharpe_ratio.toFixed(2) : '—'}</MetricCardLarge>
+        <MetricCardLarge label="Gain moyen/trade"><PnlSpan value={m.expectancy} /></MetricCardLarge>
+        <MetricCardLarge label="Gain moyen"><PnlSpan value={m.avg_win} /></MetricCardLarge>
+        <MetricCardLarge label="Perte moyenne"><PnlSpan value={m.avg_loss} /></MetricCardLarge>
+        <MetricCardLarge label="Meilleur trade"><PnlSpan value={m.best_trade} /></MetricCardLarge>
+        <MetricCardLarge label="Pire trade"><PnlSpan value={m.worst_trade} /></MetricCardLarge>
+        <MetricCardLarge label="Sharpe">{m.sharpe_ratio != null ? m.sharpe_ratio.toFixed(2) : '—'}</MetricCardLarge>
       </div>
 
       {/* Evaluation */}
-      {runEval && <EvaluationPanel result={runEval} title="Évaluation du run" />}
+      {runEval && <EvaluationPanel result={runEval} title="Évaluation du test" />}
 
       {/* Pro metrics */}
       <ProMetricsGrid metrics={m} />
@@ -266,15 +266,15 @@ export default function RunDetail() {
       {/* Equity chart */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Equity Curve</h2>
+          <h2 className="text-lg font-semibold text-white">Courbe de capital</h2>
           <div className="flex items-center gap-3">
             <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
               <button onClick={() => setEquityDataMode('pnl')}
                 className={`px-3 py-1 transition ${equityDataMode === 'pnl' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-              >PnL</button>
+              >Résultat</button>
               <button onClick={() => setEquityDataMode('equity')}
                 className={`px-3 py-1 transition ${equityDataMode === 'equity' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}
-              >Equity</button>
+              >Capital</button>
             </div>
             <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
               <button onClick={() => setEquityMode('trade')}
@@ -286,7 +286,7 @@ export default function RunDetail() {
             </div>
             {m.max_drawdown > 0 && (
               <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-500">Max DD</span>
+                <span className="text-[11px] text-slate-500">Perte max</span>
                 <div className="flex rounded-lg overflow-hidden border border-slate-600 text-xs">
                   <button onClick={() => setDdHighlight('off')}
                     className={`px-2.5 py-1 transition ${ddHighlight === 'off' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-700'}`}>Off</button>
@@ -331,14 +331,14 @@ export default function RunDetail() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-700">
-                    <th className="py-2 px-3 bg-slate-800">Open</th>
-                    <th className="py-2 px-3 bg-slate-800">Close</th>
-                    <th className="py-2 px-3 bg-slate-800">Symbol</th>
-                    <th className="py-2 px-3 bg-slate-800">Side</th>
-                    <th className="py-2 px-3 bg-slate-800">Entry</th>
-                    <th className="py-2 px-3 bg-slate-800">Exit</th>
+                    <th className="py-2 px-3 bg-slate-800">Ouverture</th>
+                    <th className="py-2 px-3 bg-slate-800">Fermeture</th>
+                    <th className="py-2 px-3 bg-slate-800">Actif</th>
+                    <th className="py-2 px-3 bg-slate-800">Sens</th>
+                    <th className="py-2 px-3 bg-slate-800">Entrée</th>
+                    <th className="py-2 px-3 bg-slate-800">Sortie</th>
                     <th className="py-2 px-3 bg-slate-800">Lots</th>
-                    <th className="py-2 px-3 bg-slate-800">PnL</th>
+                    <th className="py-2 px-3 bg-slate-800">Résultat</th>
                     <th className="py-2 px-3 bg-slate-800">Pips</th>
                   </tr>
                 </thead>

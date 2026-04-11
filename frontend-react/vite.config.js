@@ -15,6 +15,7 @@ export default defineConfig({
       '/runs': 'http://localhost:8000',
       '/compare': 'http://localhost:8000',
       '/analysis': 'http://localhost:8000',
+      '/mt5': 'http://localhost:8000',
     },
   },
   build: {

@@ -150,6 +150,7 @@ def _collect_warnings(m: dict[str, Any], context: dict[str, Any]) -> list[Warnin
     total_trades = m.get("total_trades", 0)
     pnl = m.get("total_pnl", 0)
     max_dd = m.get("max_drawdown", 0)
+    max_dd_pct = m.get("max_drawdown_pct_true") or m.get("max_drawdown_pct")
     pf = m.get("profit_factor")
     expectancy = m.get("expectancy", 0)
     win_rate = m.get("win_rate", 0)
@@ -210,6 +211,27 @@ def _collect_warnings(m: dict[str, Any], context: dict[str, Any]) -> list[Warnin
                 family=WarningFamily.risque,
                 title="Drawdown élevé",
                 message=f"Drawdown de {max_dd:.2f} — disproportionné par rapport au PnL total.",
+            ))
+
+    # Drawdown en % du capital — dangereux au-delà de 30%, critique au-delà de 50%
+    # Remplace tout warning DD$ existant par le warning DD% (plus pertinent)
+    if max_dd_pct is not None:
+        dd_pct_abs = abs(max_dd_pct)
+        if dd_pct_abs >= 0.50:
+            warnings = [w for w in warnings if w.code != "HIGH_DRAWDOWN"]
+            warnings.append(Warning(
+                code="HIGH_DRAWDOWN",
+                family=WarningFamily.risque,
+                title="Drawdown élevé",
+                message=f"Drawdown de {dd_pct_abs:.0%} du capital — risque majeur de ruine.",
+            ))
+        elif dd_pct_abs >= 0.30:
+            warnings = [w for w in warnings if w.code != "HIGH_DRAWDOWN"]
+            warnings.append(Warning(
+                code="HIGH_DRAWDOWN",
+                family=WarningFamily.risque,
+                title="Drawdown élevé",
+                message=f"Drawdown de {dd_pct_abs:.0%} du capital — vigilance nécessaire.",
             ))
 
     # Pertes concentrées
@@ -354,6 +376,7 @@ def _compute_internal_score(m: dict[str, Any]) -> int:
     consistency = m.get("consistency_score")
 
     recovery = m.get("recovery_factor")
+    dd_pct = m.get("max_drawdown_pct_true") or m.get("max_drawdown_pct")
 
     # Performance (40 pts max)
     if pnl > 0:
@@ -383,6 +406,14 @@ def _compute_internal_score(m: dict[str, Any]) -> int:
     elif wr >= 0.4:
         score += 5
 
+    # Pénalité DD% — un drawdown > 30% du capital est un signal de risque fort
+    if dd_pct is not None:
+        dd_pct_abs = abs(dd_pct)
+        if dd_pct_abs >= 0.50:
+            score -= 20
+        elif dd_pct_abs >= 0.30:
+            score -= 10
+
     # Échantillon (20 pts max)
     if total_trades >= 100:
         score += 20
@@ -402,7 +433,7 @@ def _compute_internal_score(m: dict[str, Any]) -> int:
         elif consistency >= 30:
             score += 5
 
-    return min(100, score)
+    return max(0, min(100, score))
 
 
 def _determine_verdict(score: int, m: dict[str, Any], warnings: list[Warning]) -> Verdict:
@@ -496,7 +527,11 @@ def _build_synthesis(verdict: Verdict, m: dict[str, Any], warnings: list[Warning
         remaining = _MIN_TRADES_CONFIRM - total_trades
         limit = f"échantillon trop faible — encore au moins {remaining} trades pour conclure"
     elif any(w.code == "HIGH_DRAWDOWN" for w in warnings):
-        limit = "drawdown trop élevé pour être rassurant"
+        dd_pct_val = m.get("max_drawdown_pct_true") or m.get("max_drawdown_pct")
+        if dd_pct_val is not None:
+            limit = f"drawdown de {abs(dd_pct_val):.0%} du capital — trop risqué"
+        else:
+            limit = "drawdown trop élevé pour être rassurant"
     elif any(w.code == "SINGLE_TRADE_DOMINANCE" for w in warnings):
         limit = "trop dépendante de quelques gros trades"
     elif any(w.code == "RECENT_INSTABILITY" for w in warnings):
@@ -557,12 +592,25 @@ def _recommend_action(
     elif verdict == Verdict.prometteuse:
         primary = ActionType.continuer_test
         secondary_parts = []
+        if any(w.code == "HIGH_DRAWDOWN" for w in warnings):
+            secondary_parts.append("réduire le risque ou le levier")
         if has_parent:
             secondary_parts.append("comparer à la variante mère")
-        secondary = " ".join(secondary_parts) if secondary_parts else None
+        secondary = " — ".join(secondary_parts) if secondary_parts else None
     elif verdict == Verdict.a_confirmer:
-        primary = ActionType.continuer_test
-        secondary = "Accumuler plus de données avant toute conclusion"
+        has_dd = any(w.code == "HIGH_DRAWDOWN" for w in warnings)
+        if has_dd:
+            primary = ActionType.reduire_risque
+            secondary = "Revoir la gestion du risque avant de poursuivre"
+        else:
+            primary = ActionType.continuer_test
+            secondary_parts = []
+            if total_trades < _MIN_TRADES_CONFIRM:
+                remaining = max(0, _MIN_TRADES_CONFIRM - total_trades)
+                secondary_parts.append(f"accumuler au moins {remaining} trades de plus")
+            if has_parent:
+                secondary_parts.append("comparer à la variante mère")
+            secondary = " — ".join(secondary_parts) if secondary_parts else None
     else:
         # Fragile
         if pnl <= 0 and total_trades >= _MIN_TRADES_SOLID:

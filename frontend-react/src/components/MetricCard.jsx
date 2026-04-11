@@ -37,8 +37,16 @@ export default function MetricCard({ to, title, badge, description, metrics, pai
       </div>
       {desc && <p className="text-xs text-slate-500 mb-2 truncate">{desc}</p>}
       {hasTags && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {pairs && pairs.map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{p}</span>)}
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
+          {pairs && pairs.slice(0, 3).map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{p}</span>)}
+          {pairs && pairs.length > 3 && (
+            <span className="relative group/pairs text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 cursor-default">
+              +{pairs.length - 3}
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover/pairs:flex flex-wrap gap-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 shadow-lg z-50 w-max max-w-[200px]">
+                {pairs.slice(3).map(p => <span key={p} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">{p}</span>)}
+              </span>
+            </span>
+          )}
           {timeframes && timeframes.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400">{t}</span>)}
         </div>
       )}

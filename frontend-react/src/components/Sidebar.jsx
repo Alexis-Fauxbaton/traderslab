@@ -46,6 +46,7 @@ export default function Sidebar({ collapsed, onNewStrategy }) {
     <>
       <aside
         ref={sidebarRef}
+        data-onboarding="sidebar"
         className={`sidebar bg-[#161b22] flex-shrink-0 overflow-y-auto ${collapsed ? 'collapsed' : ''}`}
         style={collapsed ? {} : { width: width + 'px' }}
       >

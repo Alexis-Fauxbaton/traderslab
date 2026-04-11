@@ -18,3 +18,4 @@ class Trade(Base):
     lot_size = Column(Float, nullable=False)
     pnl = Column(Float, nullable=False)
     pips = Column(Float, nullable=True)
+    external_ticket = Column(String, nullable=True, index=True)  # MT5 deal ticket for dedup

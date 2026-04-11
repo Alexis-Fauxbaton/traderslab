@@ -7,6 +7,7 @@ import { Breadcrumb, Spinner, StatusBadge, PnlSpan } from '../components/UI';
 import MiniChart from '../components/MiniChart';
 import MetricCard from '../components/MetricCard';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue, TagInput, ChipSelect } from '../components/Modal';
+import Onboarding from '../components/Onboarding';
 
 const TF_OPTIONS = [
   { value: 'M1', label: 'M1' }, { value: 'M5', label: 'M5' }, { value: 'M15', label: 'M15' },
@@ -157,7 +158,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm('Supprimer cette stratégie et toutes ses variantes ?')) return;
+    if (!confirm('Supprimer cette stratégie et toutes ses versions ?')) return;
     await API.del('/strategies/' + id);
     await reload();
     navigate('/');
@@ -202,7 +203,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
 
   const handleFirstImport = async () => {
     const v = await API.post('/variants', {
-      strategy_id: id, name: 'Itération 1', status: 'active', key_change: '',
+      strategy_id: id, name: 'Version 1', status: 'active', key_change: '',
     });
     await reload();
     navigate('/import/' + v.id);
@@ -226,6 +227,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
 
   return (
     <div className="fade-in">
+      <Onboarding flow="strategy" />
       <Breadcrumb items={[{ label: 'Stratégies', href: '#/' }, { label: data.name }]} />
 
       {/* Strategy info card */}
@@ -235,7 +237,7 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             <h1 className="text-2xl font-bold text-white mb-1">{data.name}</h1>
             <p className="text-slate-400 text-sm mb-3">{data.description || 'Pas de description'}</p>
             <div className="flex gap-4 text-sm text-slate-400">
-              <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> {(data.pairs || []).join(', ') || '—'}</span>
+              <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> {(data.pairs || []).length === 0 ? '—' : (data.pairs.slice(0, 3).join(', ') + (data.pairs.length > 3 ? ` +${data.pairs.length - 3}` : ''))}</span>
               <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> {(data.timeframes || []).join(', ') || '—'}</span>
               <span className="flex items-center gap-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> {formatDate(data.created_at)}</span>
             </div>
@@ -262,15 +264,15 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
             )}
             {lastVar && (!activeVar || lastVar.id !== activeVar.id) && (
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-slate-500">Dernière itération</span>
+                <span className="text-xs text-slate-500">Dernière version</span>
                 <Link to={'/variant/' + lastVar.id} className="text-sm text-slate-300 hover:text-white transition">{lastVar.name}</Link>
                 <StatusBadge status={lastVar.status} />
               </div>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => setShowNewVar(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">+ Tester une modification</button>
-            {importTarget && <Link to={'/import/' + importTarget.id} className="text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">📥 Importer un run</Link>}
+            <button data-onboarding="new-version" onClick={() => setShowNewVar(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">+ Nouvelle version</button>
+            {importTarget && <Link data-onboarding="import-trades" to={'/import/' + importTarget.id} className="text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">📥 Importer des trades</Link>}
             {activeVar && lastVar && lastVar.id !== activeVar.id && (
               <button onClick={handleCompareQuick} className="text-sm text-slate-300 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">⚖ Comparer active vs dernier test</button>
             )}
@@ -280,13 +282,13 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
 
       {/* View toggle */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-slate-400">Historique des itérations ({data.variants.length})</h2>
+        <h2 className="text-base font-semibold text-slate-400">Versions ({data.variants.length})</h2>
         <div className="flex gap-2">
           <button onClick={() => setView('grid')} className={`text-sm px-3 py-1.5 rounded-lg border transition ${view === 'grid' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white'}`}>Grille</button>
           {data.variants.length >= 2 && (
             <button onClick={() => setView('tree')} className={`text-sm px-3 py-1.5 rounded-lg border transition ${view === 'tree' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white'}`}>Arborescence</button>
           )}
-          <button onClick={() => setShowNewVar(true)} className="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">+ Nouvelle itération</button>
+          <button onClick={() => setShowNewVar(true)} className="text-sm text-slate-400 hover:text-white px-3 py-1.5 rounded-lg border border-slate-600 hover:border-slate-500 transition">+ Nouvelle version</button>
         </div>
       </div>
 
@@ -296,8 +298,8 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
           <div className="text-center py-16 bg-slate-800/40 border border-dashed border-slate-700 rounded-xl">
             <div className="text-5xl mb-4">📥</div>
             <h3 className="text-base font-semibold text-white mb-2">Importez vos premiers résultats</h3>
-            <p className="text-sm text-slate-400 mb-6">Créez une itération et importez vos trades pour commencer à analyser cette stratégie.</p>
-            <button onClick={handleFirstImport} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition">📥 Créer et importer un run</button>
+            <p className="text-sm text-slate-400 mb-6">Créez une version et importez vos trades pour commencer à analyser cette stratégie.</p>
+            <button onClick={handleFirstImport} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition">📥 Créer et importer un test</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 [&>a]:h-full">
@@ -339,22 +341,22 @@ export default function StrategyDetail({ setCompareSlotA, setCompareSlotB }) {
           <InputField name="name" label="Nom" required defaultValue={data.name} />
           <TextareaField name="description" label="Description" defaultValue={data.description} />
           <TagInput name="pairs" label="Paires" defaultValue={data.pairs || []} placeholder="Ex: EURUSD, GBPUSD…" />
-          <ChipSelect name="timeframes" label="Timeframes" options={TF_OPTIONS} defaultValue={data.timeframes || []} />
+          <ChipSelect name="timeframes" label="Unités de temps" options={TF_OPTIONS} defaultValue={data.timeframes || []} />
         </Modal>
       )}
 
       {/* New iteration modal */}
       {showNewVar && (
-        <Modal title="Tester une modification" onClose={() => setShowNewVar(false)} onSubmit={handleNewVariant} wide richText
+        <Modal title="Nouvelle version" onClose={() => setShowNewVar(false)} onSubmit={handleNewVariant} wide richText
           customFooter={
             <div className="flex justify-end gap-3 mt-6">
               <button type="button" onClick={() => setShowNewVar(false)} className="px-4 py-2 text-sm text-slate-300 hover:text-white transition">Annuler</button>
               <button type="submit" name="_action" value="create" className="px-4 py-2 text-sm border border-slate-600 hover:border-slate-500 text-slate-300 hover:text-white rounded-lg transition">Créer</button>
-              <button type="submit" name="_action" value="import" className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Créer et importer un run →</button>
+              <button type="submit" name="_action" value="import" className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Créer et importer un test →</button>
             </div>
           }
         >
-          <InputField name="name" label="Nom de l'itération" required defaultValue={'Itération ' + iterCount} />
+          <InputField name="name" label="Nom de la version" required defaultValue={'Version ' + iterCount} />
           <InputField name="key_change" label="Changement clé" placeholder="Ex : Entrée après close M15 au lieu de wick touch" />
           <TextareaField name="change_reason" label="Pourquoi tu le testes" />
           <AdvancedFields parentOpts={parentOpts} statusOpts={statusOpts} defaultParentId={activeVar ? activeVar.id : ''} />
@@ -377,7 +379,7 @@ function AdvancedFields({ parentOpts, statusOpts, defaultParentId }) {
           <RichTextField name="hypothesis" label="Hypothèse détaillée" />
           <RichTextField name="changes" label="Changements techniques" />
           <RichTextField name="decision" label="Conclusion après test" />
-          <SelectField name="parent_variant_id" label="Variante de base" options={parentOpts} defaultValue={defaultParentId} />
+          <SelectField name="parent_variant_id" label="Version de base" options={parentOpts} defaultValue={defaultParentId} />
           <SelectField name="status" label="Statut" options={statusOpts} defaultValue="idea" />
         </div>
       )}

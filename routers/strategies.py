@@ -129,10 +129,30 @@ def dashboard_activity(db: Session = Depends(get_db), current_user: User = Depen
 def dashboard(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Retourne toutes les stratégies avec métriques agrégées pré-calculées."""
     strategies = db.query(Strategy).filter(Strategy.user_id == current_user.id).order_by(Strategy.created_at.desc()).all()
+    strategy_ids = [s.id for s in strategies]
+
+    # Aggregate pairs from runs per strategy
+    inferred_pairs: dict[str, set[str]] = {}
+    if strategy_ids:
+        runs = (
+            db.query(Run.pairs, Variant.strategy_id)
+            .join(Variant, Run.variant_id == Variant.id)
+            .filter(Variant.strategy_id.in_(strategy_ids))
+            .all()
+        )
+        for r_pairs, strat_id in runs:
+            if r_pairs:
+                vals = r_pairs if isinstance(r_pairs, list) else json.loads(r_pairs)
+                inferred_pairs.setdefault(strat_id, set()).update(vals)
+
     result = []
     for s in strategies:
         strategy_dict = StrategyOut.model_validate(s).model_dump()
         strategy_dict["aggregate_metrics"] = s.aggregate_metrics
+        # Merge declared pairs + inferred pairs from runs
+        merged = set(s.pairs or [])
+        merged.update(inferred_pairs.get(s.id, set()))
+        strategy_dict["pairs"] = sorted(merged)
         result.append(strategy_dict)
 
     return result
@@ -196,8 +216,22 @@ def get_strategy(strategy_id: str, db: Session = Depends(get_db), current_user: 
     if not strategy:
         raise HTTPException(404, "Stratégie introuvable")
     variants = db.query(Variant).filter(Variant.strategy_id == strategy_id).all()
+
+    # Merge declared pairs + inferred pairs from runs
+    variant_ids = [v.id for v in variants]
+    inferred = set(strategy.pairs or [])
+    if variant_ids:
+        runs = db.query(Run.pairs).filter(Run.variant_id.in_(variant_ids)).all()
+        for (r_pairs,) in runs:
+            if r_pairs:
+                vals = r_pairs if isinstance(r_pairs, list) else json.loads(r_pairs)
+                inferred.update(vals)
+
+    strat_dict = StrategyOut.model_validate(strategy).model_dump()
+    strat_dict["pairs"] = sorted(inferred)
+
     return StrategyDetail(
-        **StrategyOut.model_validate(strategy).model_dump(),
+        **strat_dict,
         variants=[VariantOut.model_validate(v) for v in variants],
     )
 

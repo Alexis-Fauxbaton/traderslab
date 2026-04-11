@@ -1,4 +1,6 @@
 import os
+import logging
+import asyncio
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -9,7 +11,10 @@ from fastapi.responses import FileResponse
 
 from database import engine, Base, run_migrations, SessionLocal
 from models.user import User  # noqa: F401 — ensure users table is created
-from routers import strategies, variants, runs, compare, analysis, auth
+from models.mt5_connection import MT5Connection  # noqa: F401 — ensure mt5_connections table is created
+from routers import strategies, variants, runs, compare, analysis, auth, mt5_sync
+
+logger = logging.getLogger(__name__)
 
 # Création des tables au démarrage
 Base.metadata.create_all(bind=engine)
@@ -36,6 +41,25 @@ app.include_router(variants.router)
 app.include_router(runs.router)
 app.include_router(compare.router)
 app.include_router(analysis.router)
+app.include_router(mt5_sync.router)
+
+
+@app.on_event("startup")
+def _reset_stale_mt5_connections():
+    """Reset MT5 connections stuck in pending/deploying from a previous server run."""
+    db = SessionLocal()
+    try:
+        stale = db.query(MT5Connection).filter(
+            MT5Connection.status.in_(["pending", "deploying"])
+        ).all()
+        for conn in stale:
+            logger.warning("Resetting stale MT5 connection %s (was %s)", conn.id, conn.status)
+            conn.status = "error"
+            conn.error_message = "Connexion interrompue par un redémarrage serveur. Réessayez."
+        if stale:
+            db.commit()
+    finally:
+        db.close()
 
 
 @app.on_event("startup")
@@ -65,6 +89,23 @@ def _backfill_run_pairs():
             db.commit()
     finally:
         db.close()
+
+
+@app.on_event("startup")
+async def _start_mt5_sync_loop():
+    """Background loop: sync all active MT5 connections every 5 minutes."""
+    from services.mt5_sync import sync_all_connections
+
+    async def _loop():
+        await asyncio.sleep(60)  # wait 60s after startup
+        while True:
+            try:
+                await sync_all_connections()
+            except Exception as e:
+                logger.error("MT5 sync loop error: %s", e)
+            await asyncio.sleep(300)  # 5 minutes
+
+    asyncio.create_task(_loop())
 
 # Choix du frontend : React (frontend-react/dist) si buildé, sinon vanilla (frontend/)
 _react_dist = os.path.join(os.path.dirname(__file__), "frontend-react", "dist")

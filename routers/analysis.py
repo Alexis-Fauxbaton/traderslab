@@ -53,7 +53,8 @@ def get_variant_analysis(variant_id: str, db: Session = Depends(get_db), current
         raise HTTPException(404, "Variante introuvable")
 
     trade_dicts, runs = _aggregate_trades(variant_id, db)
-    metrics = compute_metrics(trade_dicts)
+    initial_balance = runs[0].initial_balance if runs and runs[0].initial_balance else 10_000.0
+    metrics = compute_metrics(trade_dicts, initial_balance=initial_balance)
 
     # Contexte enrichi
     parent_variant_name = None
@@ -96,7 +97,8 @@ def get_run_analysis(run_id: str, db: Session = Depends(get_db), current_user: U
         .all()
     )
     trade_dicts = [{"close_time": t.close_time, "pnl": t.pnl} for t in trades]
-    metrics = compute_metrics(trade_dicts)
+    initial_balance = run.initial_balance if run.initial_balance else 10_000.0
+    metrics = compute_metrics(trade_dicts, initial_balance=initial_balance)
 
     # Contexte enrichi — variant & strategy already loaded above
     strategy = s
@@ -133,11 +135,13 @@ def get_compare_analysis(
     if not sb:
         raise HTTPException(404, f"Variante B introuvable : {variant_b}")
 
-    trades_a, _ = _aggregate_trades(variant_a, db)
-    trades_b, _ = _aggregate_trades(variant_b, db)
+    trades_a, runs_a = _aggregate_trades(variant_a, db)
+    trades_b, runs_b = _aggregate_trades(variant_b, db)
 
-    metrics_a = compute_metrics(trades_a)
-    metrics_b = compute_metrics(trades_b)
+    ib_a = runs_a[0].initial_balance if runs_a and runs_a[0].initial_balance else 10_000.0
+    ib_b = runs_b[0].initial_balance if runs_b and runs_b[0].initial_balance else 10_000.0
+    metrics_a = compute_metrics(trades_a, initial_balance=ib_a)
+    metrics_b = compute_metrics(trades_b, initial_balance=ib_b)
 
     result = compare_variants(metrics_a, metrics_b, name_a=va.name, name_b=vb.name)
 

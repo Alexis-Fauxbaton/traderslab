@@ -163,6 +163,7 @@ export default function VariantDetail({ setCompareSlotA }) {
   const [variantEval, setVariantEval] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
+  const [mt5Conn, setMt5Conn] = useState(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -189,6 +190,14 @@ export default function VariantDetail({ setCompareSlotA }) {
           crumbs: [{ label: 'Stratégies', href: '#/' }, { label: varData.strategy_name || 'Stratégie', href: '#/strategy/' + varData.strategy_id }, { label: varData.name }],
         }));
       } catch {}
+    })();
+    // Check for MT5 connection on this variant
+    (async () => {
+      try {
+        const conns = await API.get('/mt5/connections');
+        const match = conns.find(c => c.variant_id === id && c.status !== 'disconnected');
+        setMt5Conn(match || null);
+      } catch { setMt5Conn(null); }
     })();
   }, [id]);
 
@@ -303,6 +312,21 @@ export default function VariantDetail({ setCompareSlotA }) {
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-white">{data.name}</h1>
               <StatusBadge status={data.status} />
+              {mt5Conn && mt5Conn.status === 'connected' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Sync
+                </span>
+              )}
+              {mt5Conn && (mt5Conn.status === 'pending' || mt5Conn.status === 'deploying') && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                  🔄 Connexion MT5…
+                </span>
+              )}
+              {mt5Conn && mt5Conn.status === 'error' && (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20" title={mt5Conn.error_message || ''}>
+                  ✗ Sync erreur
+                </span>
+              )}
             </div>
             <div className="text-slate-400 text-sm"><RichDisplay value={data.description} /></div>
           </div>
@@ -328,7 +352,7 @@ export default function VariantDetail({ setCompareSlotA }) {
           </div>
           {!isRoot && (
             <div className="bg-slate-700/30 rounded-lg px-4 py-3">
-              <div className="text-slate-500 text-xs mb-1">Variante de base</div>
+              <div className="text-slate-500 text-xs mb-1">Version de base</div>
               {parentName ? <Link to={'/variant/' + data.parent_variant_id} className="text-blue-400 hover:text-blue-300">{parentName}</Link> : <span className="text-slate-600 italic">aucune (racine)</span>}
             </div>
           )}
@@ -361,7 +385,7 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Lineage */}
       {lineage && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-3">Lignée</h2>
+          <h2 className="text-lg font-semibold text-white mb-3">Historique des versions</h2>
           <div className="text-sm"><LineageTree node={lineage} currentId={id} /></div>
         </div>
       )}
@@ -371,12 +395,12 @@ export default function VariantDetail({ setCompareSlotA }) {
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">
-              Métriques agrégées — {data.runs?.length || 0} run{(data.runs?.length || 0) > 1 ? 's' : ''}
+              Résultats globaux — {data.runs?.length || 0} test{(data.runs?.length || 0) > 1 ? 's' : ''}
             </h2>
             <div className="flex items-center gap-2">
               {aggMetrics.mixed_currencies && (
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">
-                  Mixed currencies
+                  Devises mixtes
                 </span>
               )}
               {aggMetrics.currency && (
@@ -387,27 +411,27 @@ export default function VariantDetail({ setCompareSlotA }) {
             </div>
           </div>
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            <MetricCard label="Total PnL"><PnlSpan value={aggMetrics.total_pnl} /></MetricCard>
-            <MetricCard label="Return %">{aggMetrics.total_return_pct != null ? (aggMetrics.total_return_pct * 100).toFixed(2) + '%' : '—'}</MetricCard>
+            <MetricCard label="Résultat net"><PnlSpan value={aggMetrics.total_pnl} /></MetricCard>
+            <MetricCard label="Rendement %">{aggMetrics.total_return_pct != null ? (aggMetrics.total_return_pct * 100).toFixed(2) + '%' : '—'}</MetricCard>
             <MetricCard label="Trades">{aggMetrics.total_trades}</MetricCard>
-            <MetricCard label="Win Rate">{formatPercent(aggMetrics.win_rate)}</MetricCard>
-            <MetricCard label="Profit Factor">{aggMetrics.profit_factor != null ? aggMetrics.profit_factor.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Expectancy"><PnlSpan value={aggMetrics.expectancy} /></MetricCard>
-            <MetricCard label="RR Moyen">{rr != null ? rr.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Taux de réussite">{formatPercent(aggMetrics.win_rate)}</MetricCard>
+            <MetricCard label="Ratio gains/pertes">{aggMetrics.profit_factor != null ? aggMetrics.profit_factor.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Gain moyen/trade"><PnlSpan value={aggMetrics.expectancy} /></MetricCard>
+            <MetricCard label="Ratio R/R">{rr != null ? rr.toFixed(2) : '—'}</MetricCard>
             <DrawdownCard value={aggMetrics.max_drawdown} ddPeak={ddPeak} pctTrue={aggMetrics.max_drawdown_pct_true} size="sm" />
-            <MetricCard label="Sharpe (ann.)">{aggMetrics.sharpe_ratio != null ? aggMetrics.sharpe_ratio.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Sortino (ann.)">{aggMetrics.sortino_ratio != null ? aggMetrics.sortino_ratio.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Recovery Factor">{aggMetrics.recovery_factor != null ? aggMetrics.recovery_factor.toFixed(2) : '—'}</MetricCard>
-            <MetricCard label="Avg Win"><PnlSpan value={aggMetrics.avg_win} /></MetricCard>
-            <MetricCard label="Avg Loss"><PnlSpan value={aggMetrics.avg_loss} /></MetricCard>
-            <MetricCard label="Max Wins consécutifs">{aggMetrics.max_consecutive_wins ?? '—'}</MetricCard>
-            <MetricCard label="Max Losses consécutifs">{aggMetrics.max_consecutive_losses ?? '—'}</MetricCard>
+            <MetricCard label="Sharpe">{aggMetrics.sharpe_ratio != null ? aggMetrics.sharpe_ratio.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Sortino">{aggMetrics.sortino_ratio != null ? aggMetrics.sortino_ratio.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Récupération">{aggMetrics.recovery_factor != null ? aggMetrics.recovery_factor.toFixed(2) : '—'}</MetricCard>
+            <MetricCard label="Gain moyen"><PnlSpan value={aggMetrics.avg_win} /></MetricCard>
+            <MetricCard label="Perte moyenne"><PnlSpan value={aggMetrics.avg_loss} /></MetricCard>
+            <MetricCard label="Gains consécutifs max">{aggMetrics.max_consecutive_wins ?? '—'}</MetricCard>
+            <MetricCard label="Pertes consécutives max">{aggMetrics.max_consecutive_losses ?? '—'}</MetricCard>
           </div>
         </div>
       )}
 
       {/* Evaluation */}
-      {variantEval && <EvaluationPanel result={variantEval} title="Évaluation de la variante" />}
+      {variantEval && <EvaluationPanel result={variantEval} title="Évaluation de la version" />}
 
       {/* Charts */}
       {aggMetrics && aggMetrics.total_trades > 0 && (
@@ -420,11 +444,11 @@ export default function VariantDetail({ setCompareSlotA }) {
 
       {/* Runs */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Runs ({data.runs?.length || 0})</h2>
+        <h2 className="text-lg font-semibold text-white">Tests ({data.runs?.length || 0})</h2>
         <Link to={'/import/' + id} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition inline-block">📥 Importer CSV</Link>
       </div>
       {!data.runs?.length ? (
-        <EmptyState message="Aucun run importé" actionLabel="Importer un CSV" actionHref={'#/import/' + id} />
+        <EmptyState message="Aucun test importé" actionLabel="Importer un CSV" actionHref={'#/import/' + id} />
       ) : (
         <div className="space-y-3">
           {data.runs.map(r => {
@@ -446,7 +470,7 @@ export default function VariantDetail({ setCompareSlotA }) {
                         <div className="text-lg font-semibold"><PnlSpan value={r.metrics.total_pnl} /></div>
                         <div className="text-xs text-slate-400">{r.metrics.total_trades} trades · WR {formatPercent(r.metrics.win_rate)}</div>
                       </>
-                    ) : <span className="text-slate-500 text-sm">Pas de métriques</span>}
+                    ) : <span className="text-slate-500 text-sm">Pas de résultats</span>}
                   </div>
                 </div>
               </Link>
@@ -457,7 +481,7 @@ export default function VariantDetail({ setCompareSlotA }) {
 
       {/* Edit modal */}
       {showEdit && (
-        <Modal title="Modifier l'itération" onClose={() => setShowEdit(false)} onSubmit={handleEdit} wide richText>
+        <Modal title="Modifier la version" onClose={() => setShowEdit(false)} onSubmit={handleEdit} wide richText>
           <InputField name="name" label="Nom" required defaultValue={data.name} />
           <InputField name="key_change" label="Changement clé" defaultValue={data.key_change} placeholder="Ex : Entrée après close M15 au lieu de wick touch" />
           <TextareaField name="change_reason" label="Pourquoi ce test" defaultValue={richTextPlain(data.change_reason)} />
@@ -471,8 +495,8 @@ export default function VariantDetail({ setCompareSlotA }) {
 
       {/* Duplicate modal */}
       {showDuplicate && (
-        <Modal title="Dupliquer cette itération" onClose={() => setShowDuplicate(false)} onSubmit={handleDuplicate}>
-          <InputField name="name" label="Nom de la nouvelle itération" required defaultValue={'Copie — ' + data.name} />
+        <Modal title="Dupliquer cette version" onClose={() => setShowDuplicate(false)} onSubmit={handleDuplicate}>
+          <InputField name="name" label="Nom de la nouvelle version" required defaultValue={'Copie — ' + data.name} />
           <InputField name="key_change" label="Changement clé" placeholder="Qu'est-ce qui change par rapport à la version précédente ?" />
           <TextareaField name="change_reason" label="Pourquoi tu le testes" />
         </Modal>
@@ -480,19 +504,19 @@ export default function VariantDetail({ setCompareSlotA }) {
 
       {/* Delete confirmation modal */}
       {showDeleteConfirm && (
-        <Modal title="Supprimer cette variante" onClose={() => setShowDeleteConfirm(false)} customFooter={
+        <Modal title="Supprimer cette version" onClose={() => setShowDeleteConfirm(false)} customFooter={
           <div className="flex justify-end gap-3">
             <button onClick={() => setShowDeleteConfirm(false)} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:text-white hover:border-slate-500 transition">Annuler</button>
             <button onClick={confirmDelete} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition font-semibold">Supprimer</button>
           </div>
         }>
           <div className="text-slate-300 mb-4">
-            <p className="mb-3">Êtes-vous sûr de vouloir supprimer la variante <span className="font-semibold text-white">"{data.name}"</span> ?</p>
+            <p className="mb-3">Êtes-vous sûr de vouloir supprimer la version <span className="font-semibold text-white">"{data.name}"</span> ?</p>
             <p className="text-sm text-slate-400">Cette action est irréversible et supprimera :</p>
             <ul className="text-sm text-slate-400 list-disc list-inside mt-2 ml-1">
-              <li>Tous les runs associés à cette variante</li>
-              <li>Tous les trades de ces runs</li>
-              <li>Toutes les variantes enfants (si applicable)</li>
+              <li>Tous les tests associés à cette version</li>
+              <li>Tous les trades de ces tests</li>
+              <li>Toutes les versions enfants (si applicable)</li>
             </ul>
           </div>
         </Modal>
@@ -507,8 +531,8 @@ export default function VariantDetail({ setCompareSlotA }) {
           </div>
         }>
           <div className="text-slate-300">
-            <p className="mb-2">Promouvoir la variante <span className="font-semibold text-white">"{data.name}"</span> comme version active de la stratégie <span className="font-semibold text-white">"{stratName}"</span> ?</p>
-            <p className="text-sm text-slate-400 mt-4">Une seule variante peut être la version active à la fois.</p>
+            <p className="mb-2">Promouvoir la version <span className="font-semibold text-white">"{data.name}"</span> comme version active de la stratégie <span className="font-semibold text-white">"{stratName}"</span> ?</p>
+            <p className="text-sm text-slate-400 mt-4">Une seule version peut être la version active à la fois.</p>
           </div>
         </Modal>
       )}

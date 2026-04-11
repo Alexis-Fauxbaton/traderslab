@@ -14,5 +14,6 @@ class TradeOut(BaseModel):
     lot_size: float
     pnl: float
     pips: float | None
+    external_ticket: str | None = None
 
     model_config = {"from_attributes": True}

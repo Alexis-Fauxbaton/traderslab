@@ -128,6 +128,168 @@ def delete_run(run_id: str, db: Session = Depends(get_db), current_user: User = 
     db.commit()
 
 
+def _is_mt5_report(content: bytes) -> bool:
+    """Detect whether an Excel file is an MT5 report.
+
+    Scans cell values for MT5-specific markers (section headers like
+    'Positions', 'Deals', 'Orders', and known MT5 column patterns).
+    """
+    import io as _io
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(_io.BytesIO(content), read_only=True, data_only=True)
+        ws = wb.active
+        # Only scan the first 20 rows to keep it fast
+        markers = {"positions", "deals", "orders"}
+        mt5_cols = {"symbole", "symbol", "volume", "profit", "commission", "echange", "swap"}
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            if i > 20:
+                break
+            cells = {str(c).strip().lower() for c in row if c is not None}
+            # A marker row ("Positions", "Deals", etc.)
+            if cells & markers:
+                wb.close()
+                return True
+            # A header row with MT5-typical columns
+            if len(cells & mt5_cols) >= 3:
+                wb.close()
+                return True
+        wb.close()
+    except Exception:
+        pass
+    return False
+
+
+def _read_excel_smart(buf) -> "pd.DataFrame":
+    """Read an Excel file, auto-detecting the real data table.
+
+    Many trading platforms export Excel files with metadata/summary rows
+    before the actual data table. This function:
+    1. Tries a naive pd.read_excel first — if the first row looks like
+       real columnar data (no "Unnamed" columns dominating), returns it.
+    2. Otherwise, scans the raw rows to find the most likely header row
+       (the row with the most non-empty cells) and builds a DataFrame
+       from there.
+    """
+    import pandas as pd
+    from copy import deepcopy
+    from io import BytesIO
+
+    raw = buf.read()
+
+    # --- Attempt 1: naive read ---
+    try:
+        df_naive = pd.read_excel(BytesIO(raw), nrows=5)
+        cols = list(df_naive.columns.astype(str))
+        unnamed = sum(1 for c in cols if c.startswith("Unnamed"))
+        # If most columns have real names, this is a clean file — return as-is
+        if len(cols) >= 2 and unnamed <= len(cols) // 2:
+            return df_naive
+    except Exception:
+        pass
+
+    # --- Attempt 2: scan for the real header row ---
+    from openpyxl import load_workbook
+
+    wb = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    wb.close()
+
+    if not rows:
+        raise ValueError("Fichier Excel vide")
+
+    # Score each row: row with the most non-empty, string-like cells wins
+    best_idx, best_score = 0, 0
+    for i, row in enumerate(rows):
+        non_empty = [c for c in row if c is not None and str(c).strip()]
+        # Prefer rows where most cells look like text headers (not numbers)
+        text_cells = sum(1 for c in non_empty if isinstance(c, str))
+        score = len(non_empty) + text_cells
+        if score > best_score:
+            best_score = score
+            best_idx = i
+
+    header_row = rows[best_idx]
+    # Strip None trailing columns
+    while header_row and header_row[-1] is None:
+        header_row = header_row[:-1]
+
+    ncols = len(header_row)
+    headers = [str(c).strip() if c else f"col_{j}" for j, c in enumerate(header_row)]
+
+    # Collect up to 5 data rows after header
+    data_rows = []
+    for row in rows[best_idx + 1:]:
+        trimmed = row[:ncols]
+        non_empty = [c for c in trimmed if c is not None and str(c).strip()]
+        if len(non_empty) < 2:
+            break
+        data_rows.append(list(trimmed))
+        if len(data_rows) >= 5:
+            break
+
+    if not data_rows:
+        return pd.DataFrame([list(header_row[:ncols])], columns=headers)
+
+    df = pd.DataFrame(data_rows, columns=headers)
+    return df
+
+
+@router.post("/auto-mapping")
+async def auto_mapping(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Utilise un LLM pour mapper automatiquement les colonnes d'un fichier (CSV, Excel, XML)."""
+    import pandas as pd
+    import io as _io
+    from services.llm_mapper import auto_map_columns
+
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    # Pour les fichiers Excel, vérifier d'abord si c'est un rapport MT5
+    if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        if _is_mt5_report(content):
+            return {"detected_format": "mt5", "columns": [], "mapping": {}}
+
+    # Détecter le format et lire les premières lignes
+    try:
+        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+            df = _read_excel_smart(_io.BytesIO(content))
+        elif filename.endswith(".xml"):
+            df = pd.read_xml(_io.BytesIO(content))
+            df = df.head(5)
+        else:
+            # Fallback CSV (détecte le séparateur automatiquement)
+            sample = content[:4096].decode("utf-8", errors="replace")
+            sep = ";" if sample.count(";") > sample.count(",") else ","
+            df = pd.read_csv(_io.BytesIO(content), nrows=5, sep=sep)
+        df.columns = df.columns.str.strip()
+    except Exception:
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "inconnu"
+        raise HTTPException(400, f"Impossible de lire le fichier .{ext}. Vérifiez que le format est correct.")
+
+    columns = list(df.columns)
+    sample_rows = df.head(3).fillna("").to_dict(orient="records")
+    # Convertir les valeurs non-sérialisables en string
+    for row in sample_rows:
+        for k, v in row.items():
+            if not isinstance(v, (str, int, float, bool, type(None))):
+                row[k] = str(v)
+
+    try:
+        mapping = await auto_map_columns(columns, sample_rows)
+    except RuntimeError:
+        raise HTTPException(503, "Service IA indisponible. Vérifiez la configuration du serveur.")
+    except Exception:
+        raise HTTPException(502, "Erreur lors de l'analyse automatique. Réessayez ou utilisez le mode manuel.")
+
+    return {"mapping": mapping, "columns": columns}
+
+
 @router.post("/preview")
 async def preview_file(
     file: UploadFile = File(...),

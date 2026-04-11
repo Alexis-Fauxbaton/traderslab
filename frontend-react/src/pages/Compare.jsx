@@ -82,7 +82,7 @@ function DropZone({ slot, label, data, onDrop, onClear }) {
             <button onClick={onClear} className="text-xs text-red-400 hover:text-red-300">✕</button>
           </div>
         ) : (
-          <span className="text-slate-500 text-sm">Déposez une variante ici</span>
+          <span className="text-slate-500 text-sm">Déposez une version ici</span>
         )}
       </div>
     </div>
@@ -308,21 +308,21 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
   };
 
   const metricRows = [
-    { key: 'total_pnl', label: 'Total PnL' },
-    { key: 'total_return_pct', label: 'Return %', fmt: 'pct' },
+    { key: 'total_pnl', label: 'Résultat net' },
+    { key: 'total_return_pct', label: 'Rendement %', fmt: 'pct' },
     { key: 'total_trades', label: 'Trades', fmt: 'int' },
-    { key: 'win_rate', label: 'Win Rate', fmt: 'pct' },
-    { key: 'profit_factor', label: 'Profit Factor', fmt: 'num' },
-    { key: 'max_drawdown', label: 'Max Drawdown', fmt: 'dd' },
-    { key: 'max_drawdown_pct_true', label: 'Max DD % from peak', fmt: 'dd_pct' },
-    { key: 'expectancy', label: 'Expectancy' },
-    { key: 'avg_win', label: 'Avg Win' },
-    { key: 'avg_loss', label: 'Avg Loss' },
-    { key: 'best_trade', label: 'Best Trade' },
-    { key: 'worst_trade', label: 'Worst Trade' },
-    { key: 'sharpe_ratio', label: 'Sharpe (ann.)', fmt: 'num' },
-    { key: 'sortino_ratio', label: 'Sortino (ann.)', fmt: 'num' },
-    { key: 'recovery_factor', label: 'Recovery Factor', fmt: 'num' },
+    { key: 'win_rate', label: 'Taux de réussite', fmt: 'pct' },
+    { key: 'profit_factor', label: 'Ratio gains/pertes', fmt: 'num' },
+    { key: 'max_drawdown', label: 'Perte max', fmt: 'dd' },
+    { key: 'max_drawdown_pct_true', label: 'Perte max % du pic', fmt: 'dd_pct' },
+    { key: 'expectancy', label: 'Gain moyen/trade' },
+    { key: 'avg_win', label: 'Gain moyen' },
+    { key: 'avg_loss', label: 'Perte moyenne' },
+    { key: 'best_trade', label: 'Meilleur trade' },
+    { key: 'worst_trade', label: 'Pire trade' },
+    { key: 'sharpe_ratio', label: 'Sharpe', fmt: 'num' },
+    { key: 'sortino_ratio', label: 'Sortino', fmt: 'num' },
+    { key: 'recovery_factor', label: 'Récupération', fmt: 'num' },
   ];
 
   // Fetch V1 comparison analysis from backend
@@ -340,20 +340,20 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
 
   return (
     <div className="fade-in">
-      <h1 className="text-2xl font-bold text-white mb-2">Comparer des Variantes</h1>
-      <p className="text-sm text-slate-400 mb-6">Glissez des variantes depuis la sidebar ou sélectionnez-les ci-dessous.</p>
+      <h1 className="text-2xl font-bold text-white mb-2">Comparer des versions</h1>
+      <p className="text-sm text-slate-400 mb-6">Glissez des versions depuis le menu ou sélectionnez-les ci-dessous.</p>
 
       {/* Drop zones + selects */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div>
-          <DropZone slot="a" label="Variante A" data={slotA} onDrop={setSlotA} onClear={() => setSlotA(null)} />
+          <DropZone slot="a" label="Version A" data={slotA} onDrop={setSlotA} onClear={() => setSlotA(null)} />
           <select value={slotA?.id || ''} onChange={handleSelectA} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white mt-2">
             <option value="">Ou sélectionner...</option>
             {allVariants.map(v => <option key={v.id} value={v.id}>[{v.strategyName}] {v.name}</option>)}
           </select>
         </div>
         <div>
-          <DropZone slot="b" label="Variante B" data={slotB} onDrop={setSlotB} onClear={() => setSlotB(null)} />
+          <DropZone slot="b" label="Version B" data={slotB} onDrop={setSlotB} onClear={() => setSlotB(null)} />
           <select value={slotB?.id || ''} onChange={handleSelectB} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white mt-2">
             <option value="">Ou sélectionner...</option>
             {allVariants.map(v => <option key={v.id} value={v.id}>[{v.strategyName}] {v.name}</option>)}
@@ -367,7 +367,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
           <h3 className="text-sm font-semibold text-white">Filtrer par période</h3>
           <div className="flex gap-2">
             <button onClick={() => setPeriodMode('common')} className={`text-xs px-3 py-1 rounded-lg border transition ${periodMode === 'common' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white'}`}>Période commune</button>
-            <button onClick={() => setPeriodMode('individual')} className={`text-xs px-3 py-1 rounded-lg border transition ${periodMode === 'individual' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white'}`}>Par variante</button>
+            <button onClick={() => setPeriodMode('individual')} className={`text-xs px-3 py-1 rounded-lg border transition ${periodMode === 'individual' ? 'bg-blue-600 border-blue-500 text-white' : 'border-slate-600 text-slate-400 hover:text-white'}`}>Par version</button>
           </div>
         </div>
 
@@ -381,14 +381,14 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
         {periodMode === 'individual' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border border-slate-700 rounded-lg p-3">
-              <span className="text-xs text-blue-400 font-medium block mb-2">Variante A</span>
+              <span className="text-xs text-blue-400 font-medium block mb-2">Version A</span>
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-xs text-slate-400 block mb-1">Début</label><input ref={dateStartARef} type="text" placeholder="AAAA-MM-JJ" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none" /></div>
                 <div><label className="text-xs text-slate-400 block mb-1">Fin</label><input ref={dateEndARef} type="text" placeholder="AAAA-MM-JJ" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none" /></div>
               </div>
             </div>
             <div className="border border-slate-700 rounded-lg p-3">
-              <span className="text-xs text-amber-400 font-medium block mb-2">Variante B</span>
+              <span className="text-xs text-amber-400 font-medium block mb-2">Version B</span>
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="text-xs text-slate-400 block mb-1">Début</label><input ref={dateStartBRef} type="text" placeholder="AAAA-MM-JJ" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none" /></div>
                 <div><label className="text-xs text-slate-400 block mb-1">Fin</label><input ref={dateEndBRef} type="text" placeholder="AAAA-MM-JJ" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white focus:border-blue-500 focus:outline-none" /></div>
@@ -423,7 +423,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                   <h3 className="font-semibold text-white">{a.name}</h3>
                   <StatusBadge status={a.status} />
                   {a.latest_run?.currency && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{a.latest_run.currency}</span>}
-                  {a.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Mixed</span>}
+                  {a.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Devises mixtes</span>}
                 </div>
                 <p className="text-xs text-slate-400 mb-1">Hypothèse: {a.hypothesis || '—'}</p>
                 <p className="text-xs text-slate-400">Décision: {a.decision || '—'}</p>
@@ -433,7 +433,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                   <h3 className="font-semibold text-white">{b.name}</h3>
                   <StatusBadge status={b.status} />
                   {b.latest_run?.currency && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-700 text-slate-300">{b.latest_run.currency}</span>}
-                  {b.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Mixed</span>}
+                  {b.latest_run?.mixed_currencies && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-700/50">Devises mixtes</span>}
                 </div>
                 <p className="text-xs text-slate-400 mb-1">Hypothèse: {b.hypothesis || '—'}</p>
                 <p className="text-xs text-slate-400">Décision: {b.decision || '—'}</p>
@@ -441,7 +441,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
             </div>
 
             {(!a.latest_run && !b.latest_run) ? (
-              <p className="text-center text-slate-400 py-8">Aucun run disponible pour la comparaison</p>
+              <p className="text-center text-slate-400 py-8">Aucun test disponible pour la comparaison</p>
             ) : (
               <>
                 {/* Metrics table */}
@@ -479,7 +479,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
 
                 {/* Equity curves */}
                 <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
-                  <h3 className="text-lg font-semibold text-white mb-4">Equity Curves</h3>
+                  <h3 className="text-lg font-semibold text-white mb-4">Courbes de capital</h3>
                   <div style={{ height: 300 }}><canvas ref={compareChartRef} /></div>
                 </div>
 
@@ -502,7 +502,7 @@ export default function Compare({ slotA, slotB, setSlotA, setSlotB }) {
                       <div style={{ height: 250 }}><canvas ref={countChartRef} /></div>
                     </div>
                     <div>
-                      <h4 className="text-xs text-slate-400 mb-2">PnL</h4>
+                      <h4 className="text-xs text-slate-400 mb-2">Résultat</h4>
                       <div style={{ height: 250 }}><canvas ref={pnlChartRef} /></div>
                     </div>
                   </div>

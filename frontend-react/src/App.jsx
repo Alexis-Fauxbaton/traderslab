@@ -23,6 +23,7 @@ const ImportCSV = lazy(() => import('./pages/ImportCSV'));
 const Compare = lazy(() => import('./pages/Compare'));
 const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
+const MT5Sync = lazy(() => import('./pages/MT5Sync'));
 
 function getPageDepth(path) {
   if (!path || path === '/') return 0;
@@ -104,6 +105,7 @@ function AppInner() {
                 <Route path="/run/:id" element={<RunDetail />} />
                 <Route path="/import/:variantId" element={<ImportCSV />} />
                 <Route path="/compare" element={<Compare slotA={compareSlotA} slotB={compareSlotB} setSlotA={setCompareSlotA} setSlotB={setCompareSlotB} />} />
+                <Route path="/mt5-sync" element={<MT5Sync />} />
                 <Route path="*" element={<p className="text-center mt-20 text-slate-400">Page introuvable</p>} />
               </Routes>
             </Suspense>
@@ -116,7 +118,7 @@ function AppInner() {
           <InputField name="name" label="Nom" required />
           <TextareaField name="description" label="Description" />
           <TagInput name="pairs" label="Paires" defaultValue={['XAUUSD']} placeholder="Ex: EURUSD, GBPUSD…" />
-          <ChipSelect name="timeframes" label="Timeframes" defaultValue={['M15']} options={[
+          <ChipSelect name="timeframes" label="Unités de temps" defaultValue={['M15']} options={[
             { value: 'M1', label: 'M1' }, { value: 'M5', label: 'M5' }, { value: 'M15', label: 'M15' },
             { value: 'M30', label: 'M30' }, { value: 'H1', label: 'H1' }, { value: 'H4', label: 'H4' },
             { value: 'D1', label: 'D1' }, { value: 'W1', label: 'W1' },

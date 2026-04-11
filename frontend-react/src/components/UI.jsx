@@ -92,14 +92,14 @@ export function DrawdownCard({ value, ddPeak, pctTrue, size = 'lg' }) {
   if (size === 'sm') {
     return (
       <div className="metric-card bg-slate-700/40 rounded-lg px-3 py-2 text-center">
-        <div className="text-xs text-slate-500 mb-0.5 flex items-center justify-center">Max Drawdown{toggleBtn}</div>
+        <div className="text-xs text-slate-500 mb-0.5 flex items-center justify-center">Perte max{toggleBtn}</div>
         <div className="text-sm font-semibold text-white">{display}</div>
       </div>
     );
   }
   return (
     <div className="metric-card bg-slate-800 border border-slate-700 rounded-xl p-4">
-      <div className="text-xs text-slate-400 mb-1 flex items-center">Max Drawdown{toggleBtn}</div>
+      <div className="text-xs text-slate-400 mb-1 flex items-center">Perte max{toggleBtn}</div>
       <div className="text-lg font-semibold">{display}</div>
     </div>
   );
