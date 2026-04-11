@@ -124,7 +124,12 @@ export default function ImportCSV() {
           if (res.mapping) setMapping(res.mapping);
         })
         .catch(err => {
-          alert(err.message?.includes('503') ? 'Service IA indisponible.' : err.message?.includes('502') ? 'Erreur lors de l\'analyse. Réessayez ou utilisez le mode manuel.' : 'Impossible de lire ce fichier. Vérifiez que le format est supporté (CSV, Excel, XML).');
+          console.error('Auto-mapping error:', err.status, err.message);
+          const msg = err.status === 503 ? 'Service IA indisponible. Vérifiez la clé API.'
+            : err.status === 502 ? 'Erreur lors de l\'analyse. Réessayez ou utilisez le mode manuel.'
+            : err.status === 400 ? err.message
+            : 'Erreur de connexion au serveur. Vérifiez que le backend est en ligne.';
+          alert(msg);
         })
         .finally(() => setAutoMapping(false));
       return;
@@ -331,7 +336,8 @@ export default function ImportCSV() {
                       const res = await API.upload('/runs/auto-mapping', fd);
                       if (res.mapping) setMapping(prev => ({ ...prev, ...res.mapping }));
                     } catch (err) {
-                      alert(err.message?.includes('503') ? 'Service IA indisponible.' : 'Erreur lors de l\'analyse. Réessayez ou utilisez le mode manuel.');
+                      console.error('Auto-mapping error:', err.status, err.message);
+                      alert(err.status === 503 ? 'Service IA indisponible. Vérifiez la clé API.' : 'Erreur lors de l\'analyse. Réessayez ou utilisez le mode manuel.');
                     }
                     setAutoMapping(false);
                   }}

@@ -39,7 +39,9 @@ async function handleRes(res) {
   }
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
-    throw new Error(e.detail || res.statusText);
+    const err = new Error(e.detail || res.statusText);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -96,7 +98,9 @@ const API = {
     }
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
-      throw new Error(e.detail || res.statusText);
+      const err = new Error(e.detail || res.statusText);
+      err.status = res.status;
+      throw err;
     }
     CACHE.clear();
   },
