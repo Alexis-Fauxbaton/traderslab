@@ -20,6 +20,16 @@ from services.auth import get_current_user
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+async def _read_upload(file: UploadFile, max_size: int = MAX_UPLOAD_SIZE) -> bytes:
+    """Read upload content with size limit."""
+    content = await file.read()
+    if len(content) > max_size:
+        raise HTTPException(413, f"Fichier trop volumineux (max {max_size // (1024*1024)} Mo).")
+    return content
+
 
 def _verify_run_owner(run_id: str, db: Session, user: User) -> Run:
     """Get run and verify ownership through variant → strategy."""
@@ -247,7 +257,7 @@ async def auto_mapping(
     import io as _io
     from services.llm_mapper import auto_map_columns
 
-    content = await file.read()
+    content = await _read_upload(file)
     filename = (file.filename or "").lower()
 
     # Pour les fichiers Excel, vérifier d'abord si c'est un rapport MT5
@@ -296,7 +306,7 @@ async def preview_file(
     current_user: User = Depends(get_current_user),
 ):
     """Preview parsing of an MT5 Excel file: column mapping + first trades."""
-    content = await file.read()
+    content = await _read_upload(file)
     filename = (file.filename or "").lower()
     is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
 
@@ -351,7 +361,7 @@ async def import_csv(
             raise HTTPException(400, "column_mapping n'est pas un JSON valide")
 
     # Étape 1-3 : Parser et valider le fichier
-    content = await file.read()
+    content = await _read_upload(file)
     filename = (file.filename or "").lower()
     is_excel = filename.endswith(".xlsx") or filename.endswith(".xls")
 

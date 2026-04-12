@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import Enum
 from typing import Any
@@ -18,24 +18,24 @@ class VariantStatus(str, Enum):
 class VariantCreate(BaseModel):
     strategy_id: str
     parent_variant_id: str | None = None
-    name: str
-    description: str = ""
-    hypothesis: str = ""
-    changes: str = ""
-    change_reason: str = ""
-    decision: str = ""
-    key_change: str = ""
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=2000)
+    hypothesis: str = Field(default="", max_length=2000)
+    changes: str = Field(default="", max_length=2000)
+    change_reason: str = Field(default="", max_length=2000)
+    decision: str = Field(default="", max_length=2000)
+    key_change: str = Field(default="", max_length=500)
     status: VariantStatus = VariantStatus.idea
 
 
 class VariantUpdate(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    hypothesis: str | None = None
-    changes: str | None = None
-    change_reason: str | None = None
-    decision: str | None = None
-    key_change: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=2000)
+    hypothesis: str | None = Field(default=None, max_length=2000)
+    changes: str | None = Field(default=None, max_length=2000)
+    change_reason: str | None = Field(default=None, max_length=2000)
+    decision: str | None = Field(default=None, max_length=2000)
+    key_change: str | None = Field(default=None, max_length=500)
     status: VariantStatus | None = None
 
 

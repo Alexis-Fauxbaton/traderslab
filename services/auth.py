@@ -12,7 +12,12 @@ from google.auth.transport import requests as google_requests
 from database import get_db
 from models.user import User
 
-SECRET_KEY = os.getenv("SECRET_KEY", "traderslab-dev-secret-change-in-prod")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY environment variable is required. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 

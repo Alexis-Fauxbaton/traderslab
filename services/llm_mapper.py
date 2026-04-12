@@ -55,11 +55,37 @@ Exemples de cas à NE PAS mapper :
 Format de réponse : {"open_time": "nom_colonne_csv", "pnl": "nom_colonne_csv", ...}"""
 
 
+def _anonymize_value(val) -> str:
+    """Replace real values with type descriptors to avoid sending user data to OpenAI."""
+    import re
+    s = str(val).strip()
+    if not s or s.lower() in ("", "nan", "none", "null"):
+        return "<vide>"
+    # Dates / timestamps
+    if re.match(r"^\d{4}[.\-/]\d{2}[.\-/]\d{2}", s):
+        return "<datetime>"
+    # Numbers (possibly with sign, comma, dot)
+    cleaned = s.replace(",", ".").replace(" ", "").replace("\u00a0", "")
+    try:
+        float(cleaned)
+        return "<number>"
+    except ValueError:
+        pass
+    # Short string: include it (symbol names, buy/sell, etc. are not private)
+    if len(s) <= 20 and re.match(r"^[A-Za-z0-9_./ -]+$", s):
+        return s
+    # Longer strings: mask
+    return f"<text:{len(s)}chars>"
+
+
 async def auto_map_columns(
     csv_columns: list[str],
     sample_rows: list[dict],
 ) -> dict[str, str]:
     """Appelle GPT-4o-mini pour mapper automatiquement les colonnes CSV.
+
+    Sample values are anonymized before being sent to OpenAI —
+    only column names and value *types* are transmitted, not real trading data.
 
     Returns:
         Dict {champ_interne: nom_colonne_csv}
@@ -67,15 +93,13 @@ async def auto_map_columns(
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY non configurée")
 
-    # Construire le prompt utilisateur avec exemples de valeurs par colonne
-    col_samples = {}
+    # Construire le prompt utilisateur avec valeurs anonymisées
+    col_samples: dict[str, list[str]] = {}
     for col in csv_columns:
-        vals = [str(row.get(col, "")) for row in sample_rows if row.get(col) not in (None, "")]
+        vals = [_anonymize_value(row.get(col, "")) for row in sample_rows if row.get(col) not in (None, "")]
         col_samples[col] = vals[:3]
 
-    user_prompt = (
-        f"Voici les colonnes du CSV avec des exemples de valeurs réelles :\n"
-    )
+    user_prompt = "Voici les colonnes du fichier avec le type/format des valeurs :\n"
     for col, vals in col_samples.items():
         user_prompt += f'  "{col}": {vals}\n'
     user_prompt += "\nMappe ces colonnes vers les champs TradersLab. Ne mappe que les correspondances certaines."

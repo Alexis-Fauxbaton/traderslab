@@ -110,6 +110,18 @@ export default function Dashboard({ onNewStrategy }) {
       API.get('/strategies/dashboard'),
       API.get('/strategies/dashboard/activity'),
     ]).then(([s, a]) => {
+      // Apply sidebar order (drag-and-drop) from localStorage
+      try {
+        const order = JSON.parse(localStorage.getItem('strategyOrder')) || [];
+        if (order.length) {
+          s.sort((a, b) => {
+            let ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+            if (ia === -1) ia = 9999;
+            if (ib === -1) ib = 9999;
+            return ia - ib;
+          });
+        }
+      } catch {}
       setStrategies(s); setActivity(a);
     });
   }, []);
