@@ -32,11 +32,16 @@ export function Spinner() {
   );
 }
 
-export function EmptyState({ message, actionLabel, actionHref }) {
+export function EmptyState({ message, actionLabel, actionHref, onAction }) {
   return (
     <div className="text-center py-16 text-slate-400">
       <p className="text-lg mb-4">{message}</p>
-      {actionLabel && (
+      {actionLabel && onAction && (
+        <button onClick={onAction} className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
+          {actionLabel}
+        </button>
+      )}
+      {actionLabel && !onAction && actionHref && (
         <a href={actionHref} className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition">
           {actionLabel}
         </a>

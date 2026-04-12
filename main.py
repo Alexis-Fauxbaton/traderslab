@@ -76,7 +76,7 @@ def _reset_stale_mt5_connections():
     db = SessionLocal()
     try:
         stale = db.query(MT5Connection).filter(
-            MT5Connection.status.in_(["pending", "deploying"])
+            MT5Connection.status.in_(["pending", "deploying", "syncing"])
         ).all()
         for conn in stale:
             logger.warning("Resetting stale MT5 connection %s (was %s)", conn.id, conn.status)
@@ -129,7 +129,7 @@ async def _start_mt5_sync_loop():
                 await sync_all_connections()
             except Exception as e:
                 logger.error("MT5 sync loop error: %s", e)
-            await asyncio.sleep(300)  # 5 minutes
+            await asyncio.sleep(3600)  # 1 hour (daily enforcement in sync_all_connections)
 
     asyncio.create_task(_loop())
 

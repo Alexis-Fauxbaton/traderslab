@@ -59,8 +59,8 @@ MT5_SERVERS = [
     "FundedNext-Server 3",
     "FundedNext-Demo",
     "FTMO-Server",
-    "FTMO-Server 2",
-    "FTMO-Server 3",
+    "FTMO-Server2",
+    "FTMO-Server3",
     "FTMO-Demo",
     "ThePropTrading-Server",
     "TopstepTrader-Server",
@@ -161,18 +161,6 @@ async def connect_mt5(
     if not strategy:
         raise HTTPException(404, "Variante introuvable")
 
-    # Check no active connection for this variant
-    existing = (
-        db.query(MT5Connection)
-        .filter(
-            MT5Connection.variant_id == body.variant_id,
-            MT5Connection.status.notin_(["disconnected"]),
-        )
-        .first()
-    )
-    if existing:
-        raise HTTPException(409, "Cette variante a déjà une connexion MT5 active")
-
     conn = MT5Connection(
         user_id=current_user.id,
         variant_id=body.variant_id,
@@ -181,6 +169,8 @@ async def connect_mt5(
         platform=body.platform,
         status="pending",
         investor_password_enc=encrypt_password(body.investor_password),
+        sync_from=body.sync_from,
+        sync_to=body.sync_to,
     )
     db.add(conn)
     db.commit()
@@ -225,6 +215,8 @@ async def retry_connection(
 ):
     """Relance le provisioning d'une connexion en erreur."""
     conn = _verify_connection_owner(connection_id, db, current_user)
+    if conn.status in ("pending", "deploying", "syncing"):
+        raise HTTPException(400, "Un provisioning ou une synchronisation est déjà en cours. Veuillez patienter.")
     if conn.status not in ("error", "disconnected"):
         raise HTTPException(400, f"Retry possible uniquement si status=error|disconnected (actuel : {conn.status})")
 
@@ -272,10 +264,12 @@ async def trigger_sync(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Force une synchronisation manuelle immédiate."""
+    """Force une synchronisation manuelle immédiate (admin only)."""
+    if not current_user.is_admin:
+        raise HTTPException(403, "Seuls les administrateurs peuvent forcer une synchronisation.")
     conn = _verify_connection_owner(connection_id, db, current_user)
-    if conn.status != "connected":
-        raise HTTPException(400, f"Connexion non active (status : {conn.status})")
+    if conn.status not in ("connected",):
+        raise HTTPException(400, "Synchronisation impossible : le compte n'est pas connecté ou un sync est déjà en cours.")
     _fire_and_forget(sync_connection(conn.id))
     return {"message": "Synchronisation lancée"}
 

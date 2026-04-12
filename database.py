@@ -61,6 +61,18 @@ def run_migrations():
                            _col_type("TEXT", "TEXT"))
     _add_column_if_missing(insp, "mt5_connections", "investor_password_enc",
                            _col_type("TEXT", "TEXT"))
+    _add_column_if_missing(insp, "mt5_connections", "sync_from",
+                           _col_type("DATE", "DATE"))
+    _add_column_if_missing(insp, "mt5_connections", "sync_to",
+                           _col_type("DATE", "DATE"))
+    _add_column_if_missing(insp, "users", "is_admin",
+                           _col_type("BOOLEAN DEFAULT 0", "BOOLEAN DEFAULT FALSE"))
+
+    # Set admin flag for the initial admin user
+    _set_admin_user(insp)
+
+    # Drop unique constraint on mt5_connections.variant_id (allow multiple connections per variant)
+    _drop_unique_constraint_variant_id(insp)
 
     # Migrate market → pairs, timeframe → timeframes (JSON arrays)
     _migrate_strategy_pairs_timeframes(insp)
@@ -99,8 +111,36 @@ def _create_index_if_missing(index_name: str, table: str, column: str):
     logger.info("Migration: ensured index %s on %s(%s)", index_name, table, column)
 
 
+def _set_admin_user(insp):
+    """Ensure the admin user has is_admin=True."""
+    if not insp.has_table("users"):
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE users SET is_admin = TRUE WHERE email = 'zefrost77@gmail.com' AND (is_admin IS NULL OR is_admin = FALSE)")
+        )
+
+
+def _drop_unique_constraint_variant_id(insp):
+    """Drop the unique constraint on mt5_connections.variant_id to allow multiple connections per variant."""
+    if not insp.has_table("mt5_connections"):
+        return
+    uqs = insp.get_unique_constraints("mt5_connections")
+    variant_uq = [u for u in uqs if "variant_id" in u.get("column_names", [])]
+    if not variant_uq:
+        return
+    uq_name = variant_uq[0]["name"]
+    if _IS_POSTGRES:
+        with engine.begin() as conn:
+            conn.execute(text(f'ALTER TABLE mt5_connections DROP CONSTRAINT "{uq_name}"'))
+    else:
+        # SQLite: no ALTER TABLE DROP CONSTRAINT — recreate table without it
+        # For SQLite, the ORM will create the table correctly on next start
+        pass
+    logger.info("Migration: dropped unique constraint %s on mt5_connections.variant_id", uq_name)
+
+
 def _migrate_strategy_pairs_timeframes(insp):
-    """Migrate old market/timeframe string columns to pairs/timeframes JSON arrays."""
     import json
 
     if not insp.has_table("strategies"):

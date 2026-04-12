@@ -15,5 +15,6 @@ class User(Base):
     auth_provider = Column(String, default="local")  # local | google | apple
     provider_id = Column(String, nullable=True, index=True)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     currency = Column(String, default="USD")

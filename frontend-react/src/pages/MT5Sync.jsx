@@ -2,26 +2,52 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../lib/api';
 import { Spinner } from '../components/UI';
-import { formatDate } from '../lib/utils';
+import { formatDateTime } from '../lib/utils';
+import MT5ConnectForm from '../components/MT5ConnectForm';
 
 const STATUS_CONFIG = {
-  pending:       { label: 'En attente',   bg: 'bg-slate-500/15',  text: 'text-slate-400', border: 'border-slate-500/30', icon: '⏳' },
-  deploying:     { label: 'Déploiement…', bg: 'bg-yellow-900/30', text: 'text-yellow-400', border: 'border-yellow-700', icon: '🔄' },
-  connected:     { label: 'Connecté',     bg: 'bg-green-900/30',  text: 'text-green-400',  border: 'border-green-700', icon: '✓' },
-  error:         { label: 'Erreur',       bg: 'bg-red-900/30',    text: 'text-red-400',    border: 'border-red-700', icon: '✗' },
-  disconnected:  { label: 'Déconnecté',   bg: 'bg-slate-700/40',  text: 'text-slate-500',  border: 'border-slate-600', icon: '—' },
+  pending:       { label: 'En attente',   bg: 'bg-slate-500/15',  text: 'text-slate-400', border: 'border-slate-500/30', spin: false, pulse: true },
+  deploying:     { label: 'Déploiement…', bg: 'bg-yellow-900/30', text: 'text-yellow-400', border: 'border-yellow-700', spin: true, pulse: false },
+  connected:     { label: 'Connecté',     bg: 'bg-green-900/30',  text: 'text-green-400',  border: 'border-green-700', spin: false, pulse: false, dot: true },
+  syncing:       { label: 'Sync…',        bg: 'bg-blue-900/30',   text: 'text-blue-400',   border: 'border-blue-700', spin: true, pulse: false },
+  error:         { label: 'Erreur',       bg: 'bg-red-900/30',    text: 'text-red-400',    border: 'border-red-700', spin: false, pulse: false, svgIcon: 'error' },
+  disconnected:  { label: 'Déconnecté',   bg: 'bg-slate-700/40',  text: 'text-slate-500',  border: 'border-slate-600', spin: false, pulse: false, svgIcon: 'disconnected' },
 };
+
+function SpinnerIcon({ className = '' }) {
+  return (
+    <svg className={`w-3.5 h-3.5 animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
 
 function StatusBadge({ status }) {
   const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.pending;
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.text} ${cfg.border}`}>
-      <span>{cfg.icon}</span> {cfg.label}
+      {cfg.spin && <SpinnerIcon />}
+      {cfg.pulse && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />}
+      {cfg.dot && <span className="w-1.5 h-1.5 rounded-full bg-current" />}
+      {cfg.svgIcon === 'error' && (
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <circle cx="12" cy="12" r="9" />
+          <line x1="15" y1="9" x2="9" y2="15" />
+          <line x1="9" y1="9" x2="15" y2="15" />
+        </svg>
+      )}
+      {cfg.svgIcon === 'disconnected' && (
+        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="6" y1="12" x2="18" y2="12" />
+        </svg>
+      )}
+      {cfg.label}
     </span>
   );
 }
 
-function ConnectionCard({ conn, onSync, onDisconnect, onRetry, onDelete, syncing, servers }) {
+function ConnectionCard({ conn, onSync, onDisconnect, onRetry, onDelete, syncing, servers, isAdmin }) {
   const [showEdit, setShowEdit] = useState(false);
   const [editForm, setEditForm] = useState({
     mt5_login: conn.mt5_login,
@@ -73,7 +99,15 @@ function ConnectionCard({ conn, onSync, onDisconnect, onRetry, onDelete, syncing
         <div>
           <span className="text-slate-500">Dernière sync</span>
           <div className="text-slate-200 font-medium">
-            {conn.last_sync_at ? formatDate(conn.last_sync_at, true) : 'Jamais'}
+            {conn.last_sync_at ? formatDateTime(conn.last_sync_at.endsWith('Z') ? conn.last_sync_at : conn.last_sync_at + 'Z') : 'Jamais'}
+          </div>
+        </div>
+        <div>
+          <span className="text-slate-500">Plage de sync</span>
+          <div className="text-slate-200 font-medium">
+            {conn.sync_from || conn.sync_to
+              ? `${conn.sync_from || '…'} → ${conn.sync_to || 'en cours'}`
+              : 'Tout'}
           </div>
         </div>
         <div>
@@ -93,13 +127,13 @@ function ConnectionCard({ conn, onSync, onDisconnect, onRetry, onDelete, syncing
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {conn.status === 'connected' && (
+        {isAdmin && (conn.status === 'connected' || conn.status === 'syncing') && (
           <button
             onClick={() => onSync(conn.id)}
-            disabled={syncing}
+            disabled={syncing || conn.status === 'syncing'}
             className="btn-ghost text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
           >
-            {syncing ? '⟳ Sync…' : '⟳ Forcer sync'}
+            {syncing || conn.status === 'syncing' ? '⟳ Sync…' : '⟳ Forcer sync'}
           </button>
         )}
         {canEdit && (
@@ -197,39 +231,24 @@ export default function MT5Sync() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ mt5_login: '', mt5_server: '', investor_password: '', variant_id: '', platform: 'mt5' });
-  const [variants, setVariants] = useState([]);
   const [servers, setServers] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
-  const [error, setError] = useState('');
+
+  const isAdmin = (() => {
+    try { return JSON.parse(localStorage.getItem('user'))?.is_admin === true; } catch { return false; }
+  })();
 
   const loadData = useCallback(async () => {
     try {
-      // Load connections (may 404 if none yet)
       try {
         const conns = await API.get('/mt5/connections');
         setConnections(conns);
       } catch { setConnections([]); }
 
-      // Load strategies then flatten variants
-      const strats = await API.get('/strategies');
-      const allVariants = [];
-      for (const s of strats) {
-        try {
-          const vars = await API.get(`/variants?strategy_id=${s.id}`);
-          for (const v of vars) {
-            allVariants.push({ ...v, strategyName: s.name });
-          }
-        } catch { /* skip strategy if error */ }
-      }
-      // Load servers list
       try {
         const srvs = await API.get('/mt5/servers');
         setServers(srvs);
       } catch { setServers([]); }
-
-      setVariants(allVariants);
     } catch (e) {
       console.error('loadData error:', e);
     } finally {
@@ -249,28 +268,6 @@ export default function MT5Sync() {
     }, 10_000);
     return () => clearInterval(iv);
   }, []);
-
-  const handleConnect = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!form.variant_id) { setError('Sélectionnez une version'); return; }
-    if (!form.mt5_login || !form.mt5_server || !form.investor_password) {
-      setError('Tous les champs sont requis');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await API.post('/mt5/connect', form);
-      setShowForm(false);
-      setForm({ mt5_login: '', mt5_server: '', investor_password: '', variant_id: '', platform: 'mt5' });
-      API.invalidate();
-      loadData();
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   const handleSync = async (id) => {
     setSyncingId(id);
@@ -316,12 +313,6 @@ export default function MT5Sync() {
     }
   };
 
-  // Variants already taken by an active connection
-  const takenVariantIds = new Set(
-    connections.filter(c => c.status !== 'disconnected').map(c => c.variant_id)
-  );
-  const availableVariants = variants.filter(v => !takenVariantIds.has(v.id));
-
   if (loading) return <div className="flex justify-center py-20"><Spinner /></div>;
 
   return (
@@ -365,7 +356,7 @@ export default function MT5Sync() {
               <span className="text-2xl">🔄</span>
               <div>
                 <div className="font-medium text-slate-200 mb-0.5">3. Sync automatique</div>
-                Vos trades sont synchronisés toutes les 5 minutes dans un run "Live Sync".
+                Vos trades sont synchronisés une fois par jour dans un run "Live Sync".
               </div>
             </div>
           </div>
@@ -384,119 +375,18 @@ export default function MT5Sync() {
             onDelete={handleDelete}
             syncing={syncingId === c.id}
             servers={servers}
+            isAdmin={isAdmin}
           />
         ))}
       </div>
 
       {/* Connect form modal */}
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <form
-            onSubmit={handleConnect}
-            className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl"
-          >
-            <h2 className="text-lg font-bold text-slate-200 mb-4">Connecter un compte MT5</h2>
-
-            {error && (
-              <div className="text-xs text-red-400 bg-red-900/30 border border-red-700 rounded-lg px-3 py-2 mb-3">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-slate-400 font-medium mb-1 block">Version cible</label>
-                <select
-                  value={form.variant_id}
-                  onChange={e => setForm(f => ({ ...f, variant_id: e.target.value }))}
-                  className="select-ghost w-full text-sm py-2 px-3"
-                  required
-                >
-                  <option value="">Sélectionnez…</option>
-                  {availableVariants.map(v => (
-                    <option key={v.id} value={v.id}>
-                      {v.strategyName} → {v.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 font-medium mb-1 block">Login MT5</label>
-                <input
-                  type="text"
-                  value={form.mt5_login}
-                  onChange={e => setForm(f => ({ ...f, mt5_login: e.target.value }))}
-                  placeholder="Ex: 12345678"
-                  className="w-full text-sm bg-transparent border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500 transition"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 font-medium mb-1 block">Serveur</label>
-                <input
-                  type="text"
-                  list="mt5-servers"
-                  value={form.mt5_server}
-                  onChange={e => setForm(f => ({ ...f, mt5_server: e.target.value }))}
-                  placeholder="Tapez pour rechercher… Ex: FundedNext"
-                  className="w-full text-sm bg-transparent border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500 transition"
-                  required
-                />
-                <datalist id="mt5-servers">
-                  {servers.map(s => <option key={s} value={s} />)}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 font-medium mb-1 block">Investor Password</label>
-                <input
-                  type="password"
-                  value={form.investor_password}
-                  onChange={e => setForm(f => ({ ...f, investor_password: e.target.value }))}
-                  placeholder="Mot de passe investisseur (lecture seule)"
-                  className="w-full text-sm bg-transparent border border-slate-600 rounded-lg px-3 py-2 text-slate-200 placeholder:text-slate-500 outline-none focus:border-blue-500 transition"
-                  autoComplete="off"
-                  required
-                />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  🔒 L'investor password est en lecture seule — aucun trade ne peut être exécuté.
-                  Il n'est jamais stocké dans notre base de données.
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 font-medium mb-1 block">Plateforme</label>
-                <select
-                  value={form.platform}
-                  onChange={e => setForm(f => ({ ...f, platform: e.target.value }))}
-                  className="select-ghost w-full text-sm py-2 px-3"
-                >
-                  <option value="mt5">MetaTrader 5</option>
-                  <option value="mt4">MetaTrader 4</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                type="button"
-                onClick={() => { setShowForm(false); setError(''); }}
-                className="btn-ghost text-sm text-slate-400 hover:text-slate-200 px-4 py-2"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2 rounded-lg transition disabled:opacity-50"
-              >
-                {submitting ? 'Connexion…' : 'Connecter'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <MT5ConnectForm
+          variantId={null}
+          onSuccess={() => { setShowForm(false); API.invalidate(); loadData(); }}
+          onCancel={() => setShowForm(false)}
+        />
       )}
     </div>
   );

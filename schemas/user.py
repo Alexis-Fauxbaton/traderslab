@@ -40,6 +40,7 @@ class UserOut(BaseModel):
     email: str
     username: str
     is_active: bool
+    is_admin: bool = False
     created_at: datetime
     currency: str
     auth_provider: str = "local"

@@ -10,6 +10,7 @@ import { Breadcrumb, Spinner, StatusBadge, PnlSpan, DrawdownCard, RichDisplay, M
 import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MonthlyHeatmap, UnderwaterChart, EquityChart } from '../components/ProCharts';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
+import MT5ConnectForm from '../components/MT5ConnectForm';
 
 function LineageTree({ node, currentId, depth = 0 }) {
   const isCurrent = node.id === currentId;
@@ -163,7 +164,9 @@ export default function VariantDetail({ setCompareSlotA }) {
   const [variantEval, setVariantEval] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
-  const [mt5Conn, setMt5Conn] = useState(null);
+  const [mt5Conns, setMt5Conns] = useState([]);
+  const [showImportChoice, setShowImportChoice] = useState(false);
+  const [showMT5Form, setShowMT5Form] = useState(false);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -191,14 +194,19 @@ export default function VariantDetail({ setCompareSlotA }) {
         }));
       } catch {}
     })();
-    // Check for MT5 connection on this variant
     (async () => {
       try {
         const conns = await API.get('/mt5/connections');
-        const match = conns.find(c => c.variant_id === id && c.status !== 'disconnected');
-        setMt5Conn(match || null);
-      } catch { setMt5Conn(null); }
+        setMt5Conns(conns.filter(c => c.variant_id === id && c.status !== 'disconnected'));
+      } catch { setMt5Conns([]); }
     })();
+  }, [id]);
+
+  const reloadMt5 = useCallback(async () => {
+    try {
+      const conns = await API.get('/mt5/connections');
+      setMt5Conns(conns.filter(c => c.variant_id === id && c.status !== 'disconnected'));
+    } catch { setMt5Conns([]); }
   }, [id]);
 
   // Fetch V1 analysis from backend
@@ -312,21 +320,30 @@ export default function VariantDetail({ setCompareSlotA }) {
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-bold text-white">{data.name}</h1>
               <StatusBadge status={data.status} />
-              {mt5Conn && mt5Conn.status === 'connected' && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Sync
+              {mt5Conns.map(c => (
+                <span key={c.id}>
+                  {c.status === 'connected' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Live Sync
+                    </span>
+                  )}
+                  {c.status === 'syncing' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Sync en cours…
+                    </span>
+                  )}
+                  {(c.status === 'pending' || c.status === 'deploying') && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                      Connexion MT5…
+                    </span>
+                  )}
+                  {c.status === 'error' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20" title={c.error_message || ''}>
+                      Sync erreur
+                    </span>
+                  )}
                 </span>
-              )}
-              {mt5Conn && (mt5Conn.status === 'pending' || mt5Conn.status === 'deploying') && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                  🔄 Connexion MT5…
-                </span>
-              )}
-              {mt5Conn && mt5Conn.status === 'error' && (
-                <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20" title={mt5Conn.error_message || ''}>
-                  ✗ Sync erreur
-                </span>
-              )}
+              ))}
             </div>
             <div className="text-slate-400 text-sm"><RichDisplay value={data.description} /></div>
           </div>
@@ -445,10 +462,12 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Runs */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-white">Tests ({data.runs?.length || 0})</h2>
-        <Link to={'/import/' + id} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition inline-block">📥 Importer CSV</Link>
+        <button onClick={() => setShowImportChoice(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition">
+          + Importer des trades
+        </button>
       </div>
       {!data.runs?.length ? (
-        <EmptyState message="Aucun test importé" actionLabel="Importer un CSV" actionHref={'#/import/' + id} />
+        <EmptyState message="Aucun test importé" actionLabel="Importer des trades" onAction={() => setShowImportChoice(true)} />
       ) : (
         <div className="space-y-3">
           {data.runs.map(r => {
@@ -535,6 +554,80 @@ export default function VariantDetail({ setCompareSlotA }) {
             <p className="text-sm text-slate-400 mt-4">Une seule version peut être la version active à la fois.</p>
           </div>
         </Modal>
+      )}
+
+      {/* Import source choice modal */}
+      {showImportChoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl">
+            <h2 className="text-lg font-bold text-slate-200 mb-4">Importer des trades</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {/* CSV / File import */}
+              <Link
+                to={'/import/' + id}
+                className="bg-slate-700/50 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 rounded-xl p-5 transition group text-left"
+              >
+                <div className="text-2xl mb-2">
+                  <svg className="w-8 h-8 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <line x1="9" y1="15" x2="12" y2="12" />
+                    <line x1="15" y1="15" x2="12" y2="12" />
+                  </svg>
+                </div>
+                <div className="font-semibold text-slate-200 group-hover:text-blue-400 transition text-sm">Import fichier</div>
+                <p className="text-xs text-slate-400 mt-1">CSV, Excel, MT5 Report, FX Replay</p>
+              </Link>
+
+              {/* MT5 live account */}
+              <button
+                onClick={() => { setShowImportChoice(false); setShowMT5Form(true); }}
+                className="text-left rounded-xl p-5 transition group border bg-slate-700/50 hover:bg-slate-700 border-slate-600 hover:border-blue-500"
+              >
+                <div className="text-2xl mb-2">
+                  <svg className="w-8 h-8 text-green-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                  </svg>
+                </div>
+                <div className="font-semibold text-slate-200 group-hover:text-blue-400 transition text-sm">
+                  Compte MT5
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Synchroniser un compte live ou historique
+                </p>
+              </button>
+            </div>
+            <div className="flex justify-end mt-5">
+              <button
+                onClick={() => setShowImportChoice(false)}
+                className="btn-ghost text-sm text-slate-400 hover:text-slate-200 px-4 py-2"
+              >
+                Annuler
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MT5 connect form */}
+      {showMT5Form && (
+        <MT5ConnectForm
+          variantId={id}
+          onSuccess={() => {
+            setShowMT5Form(false);
+            API.invalidate();
+            reloadMt5();
+            // Reload variant data to update runs list
+            (async () => {
+              try {
+                const d = await API.get('/variants/' + id);
+                setData(d);
+              } catch {}
+            })();
+          }}
+          onCancel={() => setShowMT5Form(false)}
+        />
       )}
     </div>
   );

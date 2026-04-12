@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, date
 
 
 class MT5ConnectionCreate(BaseModel):
@@ -8,6 +8,8 @@ class MT5ConnectionCreate(BaseModel):
     mt5_server: str
     investor_password: str
     platform: str = "mt5"
+    sync_from: date | None = None
+    sync_to: date | None = None
 
 
 class MT5ConnectionRetry(BaseModel):
@@ -31,6 +33,8 @@ class MT5ConnectionOut(BaseModel):
     initial_balance: float | None = None
     last_sync_at: datetime | None = None
     error_message: str | None = None
+    sync_from: date | None = None
+    sync_to: date | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
