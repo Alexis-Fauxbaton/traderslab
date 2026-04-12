@@ -189,12 +189,21 @@ def list_connections(
     current_user: User = Depends(get_current_user),
 ):
     """Liste toutes les connexions MT5 de l'utilisateur."""
-    return (
+    conns = (
         db.query(MT5Connection)
         .filter(MT5Connection.user_id == current_user.id)
         .order_by(MT5Connection.created_at.desc())
         .all()
     )
+    # Clean stale error messages on connected accounts
+    dirty = False
+    for c in conns:
+        if c.status == "connected" and c.error_message:
+            c.error_message = None
+            dirty = True
+    if dirty:
+        db.commit()
+    return conns
 
 
 @router.get("/connections/{connection_id}", response_model=MT5ConnectionOut)

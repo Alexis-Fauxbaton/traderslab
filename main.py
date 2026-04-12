@@ -16,7 +16,8 @@ from slowapi.errors import RateLimitExceeded
 from database import engine, Base, run_migrations, SessionLocal
 from models.user import User  # noqa: F401 — ensure users table is created
 from models.mt5_connection import MT5Connection  # noqa: F401 — ensure mt5_connections table is created
-from routers import strategies, variants, runs, compare, analysis, auth, mt5_sync
+from models.binance_connection import BinanceConnection  # noqa: F401 — ensure binance_connections table is created
+from routers import strategies, variants, runs, compare, analysis, auth, mt5_sync, binance_sync
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ app.include_router(runs.router)
 app.include_router(compare.router)
 app.include_router(analysis.router)
 app.include_router(mt5_sync.router)
+app.include_router(binance_sync.router)
 
 
 @app.on_event("startup")
@@ -118,11 +120,12 @@ def _backfill_run_pairs():
 
 
 @app.on_event("startup")
-async def _start_mt5_sync_loop():
-    """Background loop: sync all active MT5 connections.
+async def _start_sync_loop():
+    """Background loop: sync all active MT5 + Binance connections.
     Runs a first sync 10s after startup (catches up after Render sleep),
     then checks every hour."""
     from services.mt5_sync import sync_all_connections
+    from services.binance_sync import sync_all_binance_connections
 
     async def _loop():
         await asyncio.sleep(10)  # short delay for DB warmup
@@ -131,6 +134,10 @@ async def _start_mt5_sync_loop():
                 await sync_all_connections()
             except Exception as e:
                 logger.error("MT5 sync loop error: %s", e)
+            try:
+                await sync_all_binance_connections()
+            except Exception as e:
+                logger.error("Binance sync loop error: %s", e)
             await asyncio.sleep(3600)  # re-check every hour
 
     asyncio.create_task(_loop())

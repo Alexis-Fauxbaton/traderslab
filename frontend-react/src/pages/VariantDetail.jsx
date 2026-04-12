@@ -11,6 +11,7 @@ import { EvaluationPanel } from '../components/EvaluationPanel';
 import { MonthlyHeatmap, UnderwaterChart, EquityChart } from '../components/ProCharts';
 import Modal, { InputField, TextareaField, SelectField, RichTextField, getRichValue } from '../components/Modal';
 import MT5ConnectForm from '../components/MT5ConnectForm';
+import BinanceConnectForm from '../components/BinanceConnectForm';
 
 function LineageTree({ node, currentId, depth = 0 }) {
   const isCurrent = node.id === currentId;
@@ -165,8 +166,10 @@ export default function VariantDetail({ setCompareSlotA }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPromoteConfirm, setShowPromoteConfirm] = useState(false);
   const [mt5Conns, setMt5Conns] = useState([]);
+  const [binanceConns, setBinanceConns] = useState([]);
   const [showImportChoice, setShowImportChoice] = useState(false);
   const [showMT5Form, setShowMT5Form] = useState(false);
+  const [showBinanceForm, setShowBinanceForm] = useState(false);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -200,6 +203,12 @@ export default function VariantDetail({ setCompareSlotA }) {
         setMt5Conns(conns.filter(c => c.variant_id === id && c.status !== 'disconnected'));
       } catch { setMt5Conns([]); }
     })();
+    (async () => {
+      try {
+        const conns = await API.get('/binance/connections');
+        setBinanceConns(conns.filter(c => c.variant_id === id));
+      } catch { setBinanceConns([]); }
+    })();
   }, [id]);
 
   const reloadMt5 = useCallback(async () => {
@@ -207,6 +216,10 @@ export default function VariantDetail({ setCompareSlotA }) {
       const conns = await API.get('/mt5/connections');
       setMt5Conns(conns.filter(c => c.variant_id === id && c.status !== 'disconnected'));
     } catch { setMt5Conns([]); }
+    try {
+      const conns = await API.get('/binance/connections');
+      setBinanceConns(conns.filter(c => c.variant_id === id));
+    } catch { setBinanceConns([]); }
   }, [id]);
 
   // Fetch V1 analysis from backend
@@ -340,6 +353,30 @@ export default function VariantDetail({ setCompareSlotA }) {
                   {c.status === 'error' && (
                     <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20" title={c.error_message || ''}>
                       Sync erreur
+                    </span>
+                  )}
+                </span>
+              ))}
+              {binanceConns.map(c => (
+                <span key={c.id}>
+                  {c.status === 'connected' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-yellow-500/15 text-yellow-400 border border-yellow-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" /> Binance
+                    </span>
+                  )}
+                  {c.status === 'syncing' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" /> Binance sync…
+                    </span>
+                  )}
+                  {c.status === 'pending' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                      Connexion Binance…
+                    </span>
+                  )}
+                  {c.status === 'error' && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/20" title={c.error_message || ''}>
+                      Binance erreur
                     </span>
                   )}
                 </span>
@@ -559,9 +596,9 @@ export default function VariantDetail({ setCompareSlotA }) {
       {/* Import source choice modal */}
       {showImportChoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-lg mx-4 shadow-2xl">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 w-full max-w-2xl mx-4 shadow-2xl">
             <h2 className="text-lg font-bold text-slate-200 mb-4">Importer des trades</h2>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               {/* CSV / File import */}
               <Link
                 to={'/import/' + id}
@@ -594,7 +631,25 @@ export default function VariantDetail({ setCompareSlotA }) {
                   Compte MT5
                 </div>
                 <p className="text-xs text-slate-400 mt-1">
-                  Synchroniser un compte live ou historique
+                  Synchroniser un compte MetaTrader
+                </p>
+              </button>
+
+              {/* Binance account */}
+              <button
+                onClick={() => { setShowImportChoice(false); setShowBinanceForm(true); }}
+                className="text-left rounded-xl p-5 transition group border bg-slate-700/50 hover:bg-slate-700 border-slate-600 hover:border-yellow-500"
+              >
+                <div className="text-2xl mb-2">
+                  <svg className="w-8 h-8 text-yellow-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                  </svg>
+                </div>
+                <div className="font-semibold text-slate-200 group-hover:text-yellow-400 transition text-sm">
+                  Binance
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  Futures USDM ou Spot
                 </p>
               </button>
             </div>
@@ -618,7 +673,6 @@ export default function VariantDetail({ setCompareSlotA }) {
             setShowMT5Form(false);
             API.invalidate();
             reloadMt5();
-            // Reload variant data to update runs list
             (async () => {
               try {
                 const d = await API.get('/variants/' + id);
@@ -627,6 +681,25 @@ export default function VariantDetail({ setCompareSlotA }) {
             })();
           }}
           onCancel={() => setShowMT5Form(false)}
+        />
+      )}
+
+      {/* Binance connect form */}
+      {showBinanceForm && (
+        <BinanceConnectForm
+          variantId={id}
+          onSuccess={() => {
+            setShowBinanceForm(false);
+            API.invalidate();
+            reloadMt5();
+            (async () => {
+              try {
+                const d = await API.get('/variants/' + id);
+                setData(d);
+              } catch {}
+            })();
+          }}
+          onCancel={() => setShowBinanceForm(false)}
         />
       )}
     </div>

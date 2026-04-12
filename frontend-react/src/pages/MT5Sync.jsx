@@ -4,6 +4,7 @@ import API from '../lib/api';
 import { Spinner } from '../components/UI';
 import { formatDateTime } from '../lib/utils';
 import MT5ConnectForm from '../components/MT5ConnectForm';
+import BinanceConnectForm from '../components/BinanceConnectForm';
 
 const STATUS_CONFIG = {
   pending:       { label: 'En attente',   bg: 'bg-slate-500/15',  text: 'text-slate-400', border: 'border-slate-500/30', spin: false, pulse: true },
@@ -227,10 +228,109 @@ function ConnectionCard({ conn, onSync, onDisconnect, onRetry, onDelete, syncing
   );
 }
 
+function BinanceConnectionCard({ conn, onSync, onRetry, onDelete, syncing, isAdmin }) {
+  const [retrying, setRetrying] = useState(false);
+  const ACCOUNT_LABELS = { futures_usdm: 'Futures USDM', spot: 'Spot' };
+  const canRetry = conn.status === 'error' || conn.status === 'disconnected';
+
+  const handleRetry = async () => {
+    setRetrying(true);
+    await onRetry(conn.id);
+    setRetrying(false);
+  };
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-yellow-900/30 border border-yellow-700 flex items-center justify-center text-yellow-400 text-sm font-bold">
+            BN
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-slate-200">Binance {ACCOUNT_LABELS[conn.account_type] || conn.account_type}</div>
+            <div className="text-xs text-slate-400">Compte Binance</div>
+          </div>
+        </div>
+        <StatusBadge status={conn.status} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs mb-4">
+        <div>
+          <span className="text-slate-500">Devise</span>
+          <div className="text-slate-200 font-medium">{conn.currency || '—'}</div>
+        </div>
+        <div>
+          <span className="text-slate-500">Balance initiale</span>
+          <div className="text-slate-200 font-medium">
+            {conn.initial_balance != null ? conn.initial_balance.toLocaleString() : '—'}
+          </div>
+        </div>
+        <div>
+          <span className="text-slate-500">Dernière sync</span>
+          <div className="text-slate-200 font-medium">
+            {conn.last_sync_at ? formatDateTime(conn.last_sync_at.endsWith('Z') ? conn.last_sync_at : conn.last_sync_at + 'Z') : 'Jamais'}
+          </div>
+        </div>
+        <div>
+          <span className="text-slate-500">Plage de sync</span>
+          <div className="text-slate-200 font-medium">
+            {conn.sync_from || conn.sync_to
+              ? `${conn.sync_from || '…'} → ${conn.sync_to || 'en cours'}`
+              : 'Tout'}
+          </div>
+        </div>
+        <div>
+          <span className="text-slate-500">Version</span>
+          <div>
+            <Link to={`/variant/${conn.variant_id}`} className="text-blue-400 hover:text-blue-300 font-medium transition">
+              Voir →
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {conn.error_message && (
+        <div className="text-xs text-red-400 bg-red-900/30 border border-red-700 rounded-lg px-3 py-2 mb-3 break-words">
+          {conn.error_message}
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap">
+        {isAdmin && conn.status === 'connected' && (
+          <button
+            onClick={() => onSync(conn.id)}
+            disabled={syncing}
+            className="btn-ghost text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
+          >
+            {syncing ? '⟳ Sync…' : '⟳ Forcer sync'}
+          </button>
+        )}
+        {canRetry && (
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="btn-ghost text-xs text-yellow-400 hover:text-yellow-300 disabled:opacity-50"
+          >
+            {retrying ? '↻ Connexion…' : '↻ Réessayer'}
+          </button>
+        )}
+        <button
+          onClick={() => onDelete(conn.id)}
+          className="btn-ghost text-xs text-red-400 hover:text-red-300 ml-auto"
+        >
+          Supprimer
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MT5Sync() {
   const [connections, setConnections] = useState([]);
+  const [binanceConns, setBinanceConns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showBinanceForm, setShowBinanceForm] = useState(false);
   const [servers, setServers] = useState([]);
   const [syncingId, setSyncingId] = useState(null);
 
@@ -244,6 +344,11 @@ export default function MT5Sync() {
         const conns = await API.get('/mt5/connections');
         setConnections(conns);
       } catch { setConnections([]); }
+
+      try {
+        const bconns = await API.get('/binance/connections');
+        setBinanceConns(bconns);
+      } catch { setBinanceConns([]); }
 
       try {
         const srvs = await API.get('/mt5/servers');
@@ -264,6 +369,10 @@ export default function MT5Sync() {
       try {
         const conns = await API.get('/mt5/connections');
         setConnections(conns);
+      } catch { /* silent */ }
+      try {
+        const bconns = await API.get('/binance/connections');
+        setBinanceConns(bconns);
       } catch { /* silent */ }
     }, 10_000);
     return () => clearInterval(iv);
@@ -313,6 +422,39 @@ export default function MT5Sync() {
     }
   };
 
+  const handleBinanceSync = async (id) => {
+    setSyncingId(id);
+    try {
+      await API.post(`/binance/connections/${id}/sync`);
+      setTimeout(loadData, 2000);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
+  const handleBinanceDelete = async (id) => {
+    if (!confirm('Supprimer cette connexion Binance ? Cette action est irréversible.')) return;
+    try {
+      await API.del(`/binance/connections/${id}`);
+      API.invalidate();
+      loadData();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  const handleBinanceRetry = async (id) => {
+    try {
+      await API.post(`/binance/connections/${id}/retry`);
+      API.invalidate();
+      loadData();
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-20"><Spinner /></div>;
 
   return (
@@ -320,36 +462,44 @@ export default function MT5Sync() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-slate-200 tracking-tight">MT5 Live Sync</h1>
+          <h1 className="text-xl font-bold text-slate-200 tracking-tight">Live Sync</h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Connectez votre compte MetaTrader 5 pour synchroniser vos trades automatiquement.
+            Connectez vos comptes de trading pour synchroniser vos trades automatiquement.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
-        >
-          + Connecter un compte
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowBinanceForm(true)}
+            className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            + Binance
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition"
+          >
+            + MT5
+          </button>
+        </div>
       </div>
 
       {/* How it works */}
-      {connections.length === 0 && (
+      {connections.length === 0 && binanceConns.length === 0 && (
         <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 mb-6">
           <h3 className="text-sm font-semibold text-slate-200 mb-3">Comment ça marche ?</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-slate-400">
             <div className="flex gap-3">
               <span className="text-2xl">🔑</span>
               <div>
-                <div className="font-medium text-slate-200 mb-0.5">1. Investor password</div>
-                Entrez votre mot de passe investisseur (lecture seule, aucun risque de trading).
+                <div className="font-medium text-slate-200 mb-0.5">1. Identifiants</div>
+                Entrez vos identifiants en lecture seule (investor password MT5 ou clé API Binance).
               </div>
             </div>
             <div className="flex gap-3">
               <span className="text-2xl">☁️</span>
               <div>
                 <div className="font-medium text-slate-200 mb-0.5">2. Connexion cloud</div>
-                MetaApi se connecte à votre broker depuis le cloud — aucun logiciel à installer.
+                La connexion s'effectue depuis le cloud — aucun logiciel à installer.
               </div>
             </div>
             <div className="flex gap-3">
@@ -378,14 +528,32 @@ export default function MT5Sync() {
             isAdmin={isAdmin}
           />
         ))}
+        {binanceConns.map(c => (
+          <BinanceConnectionCard
+            key={c.id}
+            conn={c}
+            onSync={handleBinanceSync}
+            onRetry={handleBinanceRetry}
+            onDelete={handleBinanceDelete}
+            syncing={syncingId === c.id}
+            isAdmin={isAdmin}
+          />
+        ))}
       </div>
 
-      {/* Connect form modal */}
+      {/* Connect form modals */}
       {showForm && (
         <MT5ConnectForm
           variantId={null}
           onSuccess={() => { setShowForm(false); API.invalidate(); loadData(); }}
           onCancel={() => setShowForm(false)}
+        />
+      )}
+      {showBinanceForm && (
+        <BinanceConnectForm
+          variantId={null}
+          onSuccess={() => { setShowBinanceForm(false); API.invalidate(); loadData(); }}
+          onCancel={() => setShowBinanceForm(false)}
         />
       )}
     </div>
