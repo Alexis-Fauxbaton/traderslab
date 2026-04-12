@@ -119,17 +119,19 @@ def _backfill_run_pairs():
 
 @app.on_event("startup")
 async def _start_mt5_sync_loop():
-    """Background loop: sync all active MT5 connections every 5 minutes."""
+    """Background loop: sync all active MT5 connections.
+    Runs a first sync 10s after startup (catches up after Render sleep),
+    then checks every hour."""
     from services.mt5_sync import sync_all_connections
 
     async def _loop():
-        await asyncio.sleep(60)  # wait 60s after startup
+        await asyncio.sleep(10)  # short delay for DB warmup
         while True:
             try:
                 await sync_all_connections()
             except Exception as e:
                 logger.error("MT5 sync loop error: %s", e)
-            await asyncio.sleep(3600)  # 1 hour (daily enforcement in sync_all_connections)
+            await asyncio.sleep(3600)  # re-check every hour
 
     asyncio.create_task(_loop())
 

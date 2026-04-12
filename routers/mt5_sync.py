@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -290,3 +291,16 @@ async def delete_connection(
     db.delete(conn)
     db.commit()
     return {"message": "Connexion supprimée"}
+
+
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+
+
+@router.post("/cron-sync")
+async def cron_sync(x_cron_secret: str = Header(None)):
+    """Sync all active MT5 connections. Called by external cron job."""
+    if not CRON_SECRET or x_cron_secret != CRON_SECRET:
+        raise HTTPException(403, "Forbidden")
+    from services.mt5_sync import sync_all_connections
+    _fire_and_forget(sync_all_connections())
+    return {"message": "Sync lancé pour toutes les connexions"}

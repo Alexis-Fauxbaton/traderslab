@@ -485,8 +485,8 @@ async def sync_all_connections():
         )
         now = datetime.utcnow()
         for conn in connections:
-            # Skip if synced within last 20 hours
-            if conn.last_sync_at and (now - conn.last_sync_at).total_seconds() < 72000:
+            # Skip if synced within last 24 hours
+            if conn.last_sync_at and (now - conn.last_sync_at).total_seconds() < 86400:
                 continue
             # Skip if sync_to date has passed
             if conn.sync_to and conn.sync_to < now.date():
